@@ -5195,3 +5195,165 @@ button { -webkit-tap-highlight-color: transparent; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+
+/* =========================================================
+   VORTEXGRID CENTRAL — PREMIUM HYBRID METALLIC (APPROVED)
+   Grafite + aço + prata + violeta discreto.
+   Sobrescreve a direção roxa anterior para alinhar ao site.
+   ========================================================= */
+:root {
+  --primary: #77708f;
+  --primary-hover: #655d7d;
+  --primary-dark: #504965;
+  --primary-soft: #eeedf2;
+  --primary-border: #d9d6e2;
+  --sidebar: #20242A;
+  --sidebar-raised: #292E35;
+  --sidebar-hover: #30363E;
+  --sidebar-active: #373440;
+  --sidebar-text: #E4E7EA;
+  --sidebar-muted: #A2A8B0;
+  --sidebar-border: rgba(255,255,255,.09);
+  --background: #DFE3E7;
+  --surface: #F2F4F6;
+  --surface-alt: #E9EDF0;
+  --surface-hover: #E6E9ED;
+  --text: #252A30;
+  --text-secondary: #4E555E;
+  --muted: #737B84;
+  --muted-light: #9BA2AA;
+  --border: #D7DCE1;
+  --border-strong: #C6CDD4;
+  --focus-ring: 0 0 0 3px rgba(141,130,173,.24);
+}
+body.premium-hybrid-metallic { background:#DFE3E7; }
+#login-view.login-page {
+  padding:clamp(12px,3vw,34px);
+  background:
+    radial-gradient(ellipse at 8% 6%,rgba(141,130,173,.18),transparent 34%),
+    radial-gradient(ellipse at 95% 88%,rgba(167,176,185,.14),transparent 36%),
+    linear-gradient(135deg,#171B20 0%,#20242A 58%,#272C33 100%);
+}
+#login-view .login-shell {
+  width:min(1280px,100%);
+  min-height:min(730px,calc(100vh - 68px));
+  grid-template-columns:minmax(0,1.1fr) minmax(380px,.8fr);
+  gap:clamp(32px,5vw,76px);
+  padding:clamp(28px,4vw,64px);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:26px;
+  background:linear-gradient(135deg,rgba(49,55,63,.86),rgba(31,35,41,.9));
+  box-shadow:0 35px 100px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.045);
+}
+#login-view .login-story-content h2 span { color:#C0B8D2; }
+#login-view .login-story-kicker { color:#C3BBCF; }
+#login-view .story-feature-icon {
+  border-color:rgba(180,170,200,.24);
+  background:rgba(141,130,173,.14);
+  color:#D0C8DE;
+}
+#login-view .login-panel {
+  border-color:rgba(255,255,255,.82);
+  border-radius:20px;
+  background:linear-gradient(145deg,#F8F9FA,#EDF0F2);
+  box-shadow:0 28px 75px rgba(0,0,0,.24);
+}
+#login-view .login-heading .eyebrow {
+  border-color:#DCD8E4;
+  background:#ECEAF0;
+  color:#686174;
+}
+#login-view .login-heading h1 { color:#242930; }
+#login-view .login-heading p { color:#747B84; }
+#login-view .login-submit {
+  background:linear-gradient(135deg,#77708F,#625B78);
+  box-shadow:0 8px 20px rgba(93,85,115,.2);
+}
+#login-view .login-submit:hover { background:linear-gradient(135deg,#68617E,#514A66); }
+#app-view.app-layout { background:#DFE3E7; color:#252A30; }
+#app-view .sidebar {
+  border-right:1px solid rgba(255,255,255,.06);
+  background:linear-gradient(180deg,#272C32 0%,#20242A 58%,#1B1F24 100%);
+  box-shadow:8px 0 28px rgba(24,29,34,.06);
+}
+#app-view .sidebar .brand-mark { background:linear-gradient(145deg,#AAA3BA,#77708F); color:#fff; }
+#app-view .sidebar .nav-item.active,
+#app-view .sidebar [data-page].active {
+  background:linear-gradient(100deg,rgba(141,130,173,.25),rgba(141,130,173,.08));
+  color:#fff;
+}
+#app-view .sidebar [data-page].active::before { background:#B5ACC8; }
+#app-view .sidebar .nav-icon,
+#app-view .sidebar .nav-item.active .nav-icon { color:#C3BBD1; }
+#app-view .sidebar .sidebar-system { border-color:rgba(255,255,255,.1); }
+#app-view .main-area { background:linear-gradient(180deg,#E9ECEF 0%,#DFE3E7 100%); }
+#app-view .topbar {
+  border-bottom-color:#D3D8DE;
+  background:rgba(246,247,248,.94);
+  box-shadow:0 5px 20px rgba(36,42,48,.045);
+}
+#app-view .topbar-heading .eyebrow { color:#827A94; }
+#app-view .topbar h1,
+#app-view .topbar-title { color:#252A30; }
+#app-view .content { max-width:1720px; }
+#app-view .content>.page-header { border-bottom-color:#CDD3D9; }
+#app-view .page-header h1 { color:#252A30; }
+#app-view .page-header p { color:#6F7780; }
+#app-view .stat-card,
+#app-view .content-card,
+#app-view .dashboard-grid>.content-card {
+  border:1px solid rgba(255,255,255,.88);
+  background:linear-gradient(145deg,#F7F8F9 0%,#EEF1F3 100%);
+  box-shadow:0 8px 24px rgba(42,48,55,.045),inset 0 1px 0 rgba(255,255,255,.9);
+}
+#app-view .stat-card:hover { border-color:#D0CBD9; box-shadow:0 12px 30px rgba(42,48,55,.075); }
+#app-view .stat-icon,
+#app-view .quick-link-icon {
+  background:linear-gradient(145deg,#E8E5ED,#DCD8E5);
+  color:#756D89;
+}
+#app-view .stat-value,
+#app-view .stat-number,
+#app-view .welcome-copy { color:#252A30; }
+#app-view .table-wrapper {
+  border:1px solid #D9DEE3;
+  border-radius:13px;
+  background:#F6F7F8;
+  box-shadow:0 4px 16px rgba(40,46,52,.035);
+}
+#app-view table thead th,
+#app-view thead th { background:#E8EBEE; color:#68717A; }
+#app-view table tbody tr:hover { background:#E9E7EE; }
+#app-view table tbody td { border-bottom-color:#E0E4E8; }
+#app-view .btn-primary {
+  border-color:#77708F;
+  background:linear-gradient(135deg,#817995,#6D667F);
+  color:#fff;
+  box-shadow:0 4px 12px rgba(95,87,115,.16);
+}
+#app-view .btn-primary:hover { background:linear-gradient(135deg,#706983,#5F586F); }
+#app-view .btn:not(.btn-primary) {
+  border-color:#D0D5DA;
+  background:#F7F8F9;
+  color:#424951;
+}
+#app-view .btn:not(.btn-primary):hover { border-color:#BEB8CB; background:#ECEAF0; }
+#app-view input:focus,
+#app-view select:focus,
+#app-view textarea:focus,
+#login-view input:focus {
+  border-color:#9A91AE;
+  box-shadow:0 0 0 3px rgba(141,130,173,.17);
+}
+#app-view .empty-state { border-color:#C9CFD5; background:linear-gradient(145deg,#F7F8F9,#ECEFF2); }
+#app-view .app-footer { border-top-color:#CDD3D9; color:#78818A; }
+#app-view .global-search-result[aria-selected="true"],
+#app-view .global-search-result:focus-visible { background:#E9E6EF; }
+#app-view .alert-center-highlight { box-shadow:0 0 0 4px rgba(141,130,173,.16),var(--shadow); }
+@media(max-width:760px) {
+  #login-view.login-page { padding:12px; }
+  #login-view .login-shell { min-height:auto; padding:16px; gap:18px; }
+  #login-view .login-panel { background:#F2F4F6; }
+  #app-view .topbar { background:rgba(246,247,248,.97); }
+}
