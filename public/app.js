@@ -1735,7 +1735,7 @@
           <div class="form-field"><span>Valor</span><strong>${money(invoice.amount)}</strong></div>
           <div class="form-field"><span>Vencimento</span><strong>${date(invoice.due_date)}</strong></div>
           <div class="form-field"><span>Status</span><strong>${statusLabel(invoice.status)}</strong></div>
-          ${canGeneratePix ? `<p>Gere um PIX para esta fatura. A cobrança só será solicitada à PagHiper quando você confirmar o formulário de emissão.</p>` : ''}
+          ${canGeneratePix ? `<p>Gere um PIX para esta fatura. A cobrança só será solicitada ao Mercado Pago quando você confirmar o formulário de emissão.</p>` : ''}
         </div>
         <div class="modal-footer">
           ${canGeneratePix ? `<button type="button" class="btn btn-primary" data-action="generate-pix" data-id="${escapeHTML(invoice.id)}">Gerar PIX</button>` : ''}
@@ -1758,7 +1758,7 @@
       <div class="modal-backdrop" data-action="close-modal"></div>
       <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div class="modal-header">
-          <h2 id="modal-title">PIX emitido — Fatura #${escapeHTML(result.invoice_id)}</h2>
+          <h2 id="modal-title">PIX emitido pelo Mercado Pago — Fatura #${escapeHTML(result.invoice_id)}</h2>
           <button type="button" class="btn btn-small" data-action="close-modal">Fechar</button>
         </div>
         <div class="modal-body">
@@ -1770,7 +1770,7 @@
               <textarea id="pix-copy-code" rows="5" readonly>${escapeHTML(pixCode)}</textarea>
             </label>
             <button type="button" class="btn btn-primary" data-action="copy-pix">Copiar código PIX</button>
-          ` : '<p>A PagHiper confirmou a emissão, mas não retornou o código copia e cola. Consulte o link da cobrança, se disponível.</p>'}
+          ` : '<p>O Mercado Pago não retornou o código copia e cola. Consulte o link da cobrança, se disponível.</p>'}
           ${safeUrl ? `<p><a href="${escapeHTML(safeUrl)}" target="_blank" rel="noopener noreferrer">Abrir QR Code / cobrança PIX</a></p>` : ''}
           <p>Guarde o código e confira o pagamento na área Financeiro. Nenhum pagamento foi marcado manualmente como recebido.</p>
         </div>
@@ -1799,38 +1799,29 @@
       notify('Somente faturas pendentes ou vencidas podem receber PIX.', true);
       return;
     }
-    if (Number(invoice.amount) < 3) {
-      notify('A PagHiper aceita PIX a partir de R$ 3,00. Esta fatura precisa ser corrigida antes da emissão.', true);
-      return;
-    }
 
     openModal('Gerar PIX — Fatura #' + invoice.id, `
       <p>Cliente: <strong>${escapeHTML(invoice.client_name || `Cliente #${invoice.client_id}`)}</strong></p>
       <p>Descrição: <strong>${escapeHTML(invoice.description || 'Fatura VortexGrid')}</strong></p>
       <p>Valor: <strong>${money(invoice.amount)}</strong></p>
-      <p>Ao confirmar, a solicitação será enviada à PagHiper e poderá criar uma cobrança PIX real.</p>
+      <p>Ao confirmar, será criada uma cobrança PIX real pelo Mercado Pago.</p>
       <label class="form-field"><span>CPF ou CNPJ do pagador (somente números)</span>
         <input name="payer_cpf_cnpj" type="text" inputmode="numeric" autocomplete="off" pattern="(?:\\d{11}|\\d{14})" minlength="11" maxlength="14" placeholder="CPF com 11 ou CNPJ com 14 números" required>
       </label>
-      <label class="form-field"><span>Telefone com DDD (opcional)</span>
-        <input name="payer_phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="DDD + número">
-      </label>
-      <label class="form-field"><span>Prazo de vencimento do PIX (dias)</span>
-        <input name="days_due_date" type="number" min="1" max="400" step="1" value="1" required>
+      <label class="form-field"><span>Prazo do PIX (dias, máximo 30)</span>
+        <input name="days_due_date" type="number" min="1" max="30" step="1" value="1" required>
       </label>
     `, async values => {
-      const result = await api(`/api/invoices/${encodeURIComponent(invoice.id)}/paghiper/pix`, {
+      return await api(`/api/invoices/${encodeURIComponent(invoice.id)}/mercadopago/pix`, {
         method: 'POST',
         body: JSON.stringify({
           payer_cpf_cnpj: values.payer_cpf_cnpj,
-          payer_phone: values.payer_phone,
           days_due_date: Number(values.days_due_date)
         })
       });
-      return result;
     }, {
       submitLabel: 'Confirmar e emitir PIX',
-      successMessage: 'PIX emitido pela PagHiper.',
+      successMessage: 'PIX emitido pelo Mercado Pago.',
       onSuccess: result => showPixResult(result)
     });
   }
