@@ -21,6 +21,34 @@ if (!process.env.SESSION_SECRET || !process.env.ADMIN_SETUP_KEY) {
 }
 
 app.use(helmet());
+
+// Diagnóstico seguro do webhook: registra a chegada da requisição e o status
+// final sem registrar corpo, token, segredo ou valor da assinatura.
+app.use((req, res, next) => {
+  if (req.path !== '/api/webhooks/mercadopago') {
+    return next();
+  }
+
+  const diagnostico = {
+    method: req.method,
+    contentType: req.get('content-type') || null,
+    contentLength: req.get('content-length') || null,
+    hasSignature: Boolean(req.get('x-signature')),
+    hasRequestId: Boolean(req.get('x-request-id')),
+    hasDataIdQuery: typeof req.query['data.id'] === 'string'
+  };
+
+  console.info('Webhook Mercado Pago — requisição recebida.', diagnostico);
+  res.on('finish', () => {
+    console.info('Webhook Mercado Pago — resposta enviada.', {
+      method: req.method,
+      status: res.statusCode
+    });
+  });
+
+  return next();
+});
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -3415,14 +3443,25 @@ app.use('/api', (req, res) => {
 });
 
 app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  // JSON malformado deve receber 400, não um 500 genérico.
+  if (
+    req.path === '/api/webhooks/mercadopago' &&
+    err instanceof SyntaxError &&
+    err.status === 400 &&
+    Object.prototype.hasOwnProperty.call(err, 'body')
+  ) {
+    console.warn('Webhook Mercado Pago rejeitado: corpo JSON inválido.');
+    return erro(res, 400, 'Corpo JSON inválido.');
+  }
+
   console.error(
     'Erro interno:',
     err.code || err.message || err.name || 'erro'
   );
-
-  if (res.headersSent) {
-    return next(err);
-  }
 
   return erro(res, 500, 'Erro interno do servidor.');
 });
