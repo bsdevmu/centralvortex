@@ -13,6 +13,7 @@
     financeStatus: 'all',
     financeSearch: '',
     currentClientId: null,
+    globalSearchCache: null,
     cache: {
       clients: [],
       services: [],
@@ -463,6 +464,7 @@
 
   async function renderDashboard() {
     const data = await api('/api/dashboard');
+    updateHeaderAlerts(data);
     const isAdmin = state.user?.role === 'admin';
 
     const clientes = Number(data.clientes ?? 0);
@@ -2911,6 +2913,25 @@
       showLogin();
     }
   }
+
+
+  const globalSearchInput=$('#global-search-input'),globalSearchResults=$('#global-search-results'),globalSearchWrap=$('#global-search-wrap'),shortcutsButton=$('#shortcuts-button'),shortcutsMenu=$('#shortcuts-menu'),alertsButton=$('#header-alerts-button'),collapseButton=$('#sidebar-collapse-toggle');
+  let globalSearchTimer=null,globalSearchRequest=0;
+  function updateHeaderAlerts(d){const b=$('#header-alerts-badge');if(!b||state.user?.role!=='admin')return;const n=Number(d?.faturasVencidas||0)+Number(d?.ativacoesPendentes||0)+Number(d?.solicitacoesPendentes||0);b.textContent=n>99?'99+':String(n);b.hidden=n<=0;}
+  function closeGlobalSearch(){if(globalSearchResults)globalSearchResults.hidden=true;globalSearchInput?.setAttribute('aria-expanded','false');}
+  function closeShortcuts(){if(shortcutsMenu)shortcutsMenu.hidden=true;shortcutsButton?.setAttribute('aria-expanded','false');}
+  function searchText(v){return v.filter(x=>x!==null&&x!==undefined).join(' ').toLocaleLowerCase('pt-BR');}
+  async function globalData(){if(state.globalSearchCache)return state.globalSearchCache;const admin=state.user?.role==='admin';const [clients,services,invoices]=await Promise.all([api('/api/clients').then(r=>getArray(r,'clients')).catch(()=>[]),admin?api('/api/services').then(r=>getArray(r,'services')).catch(()=>[]):Promise.resolve([]),api('/api/invoices').then(r=>getArray(r,'invoices')).catch(()=>[])]);return state.globalSearchCache={clients,services,invoices};}
+  function resultButton(o){const k=o.type==='client'?'Cliente':o.type==='service'?'Serviço':'Fatura',sym=o.type==='client'?'♙':o.type==='service'?'▦':'R
+,page=o.action?'':o.page;return `<button type="button" class="global-search-result" role="option" data-page="${escapeHTML(page||'')}" data-action="${escapeHTML(o.action||'')}" data-id="${escapeHTML(o.id??'')}"><span class="global-search-result-icon global-search-result-${o.type}">${sym}</span><span class="global-search-result-copy"><strong>${escapeHTML(o.title||'Registro')}</strong><small>${escapeHTML(o.description||'')}</small></span><span class="global-search-result-kind">${k}</span></button>`;}
+  async function runGlobalSearch(term,id){globalSearchResults.hidden=false;globalSearchResults.innerHTML='<div class="global-search-message">Buscando registros...</div>';try{const d=await globalData();if(id!==globalSearchRequest)return;const q=term.toLocaleLowerCase('pt-BR'),out=[];d.clients.filter(x=>searchText([x.name,x.email,x.phone,x.document,x.id]).includes(q)).slice(0,5).forEach(x=>out.push(resultButton({type:'client',id:x.id,action:'client-record',title:x.name||x.email||'Cliente #'+x.id,description:[x.email,x.phone].filter(Boolean).join(' · ')})));d.services.filter(x=>searchText([x.name,x.title,x.description,x.category_name,x.id,x.status]).includes(q)).slice(0,4).forEach(x=>out.push(resultButton({type:'service',id:x.id,page:'services',title:x.name||x.title||'Serviço #'+x.id,description:[x.category_name,x.status,x.description].filter(Boolean).join(' · ')})));d.invoices.filter(x=>searchText([x.client_name,x.description,x.id,x.status]).includes(q)).slice(0,4).forEach(x=>out.push(resultButton({type:'invoice',id:x.id,page:'finance',title:x.client_name||'Fatura #'+x.id,description:[x.description,x.status,x.amount!==undefined?money(x.amount):''].filter(Boolean).join(' · ')})));globalSearchResults.innerHTML=out.length?'<div class="global-search-heading">RESULTADOS ENCONTRADOS</div>'+out.join(''):'<div class="global-search-message">Nenhum resultado para “'+escapeHTML(term)+'”.</div>';}catch{if(id===globalSearchRequest)globalSearchResults.innerHTML='<div class="global-search-message">Não foi possível concluir a busca agora.</div>';}}
+  if(globalSearchInput&&globalSearchResults){globalSearchInput.addEventListener('input',()=>{clearTimeout(globalSearchTimer);const q=globalSearchInput.value.trim(),id=++globalSearchRequest;globalSearchInput.setAttribute('aria-expanded','true');if(q.length<2){globalSearchResults.innerHTML='<div class="global-search-message">Digite pelo menos 2 caracteres.</div>';globalSearchResults.hidden=false;return;}globalSearchTimer=setTimeout(()=>runGlobalSearch(q,id),220);});globalSearchInput.addEventListener('focus',()=>{if(globalSearchInput.value.trim().length<2){globalSearchResults.innerHTML='<div class="global-search-message">Busque clientes, serviços e faturas.</div>';globalSearchResults.hidden=false;}});}
+  document.addEventListener('click',e=>{const t=e.target;if(!(t instanceof Element))return;if(globalSearchWrap&&!globalSearchWrap.contains(t))closeGlobalSearch();if(shortcutsMenu&&!shortcutsMenu.contains(t)&&!shortcutsButton?.contains(t))closeShortcuts();});
+  shortcutsButton?.addEventListener('click',()=>{const open=shortcutsMenu?.hidden??true;closeGlobalSearch();if(shortcutsMenu)shortcutsMenu.hidden=!open;shortcutsButton.setAttribute('aria-expanded',String(open));});
+  alertsButton?.addEventListener('click',async()=>{closeGlobalSearch();closeShortcuts();if(state.user?.role!=='admin'){navigate('finance');return;}await navigate('dashboard');requestAnimationFrame(()=>{const p=$('#alert-center-title')?.closest('.alert-center');if(p){p.scrollIntoView({behavior:'smooth',block:'center'});p.classList.add('alert-center-highlight');setTimeout(()=>p.classList.remove('alert-center-highlight'),1800);}});});
+  collapseButton?.addEventListener('click',()=>{const on=document.body.classList.toggle('sidebar-collapsed');collapseButton.setAttribute('aria-pressed',String(on));collapseButton.setAttribute('aria-label',on?'Expandir menu':'Recolher menu');collapseButton.title=on?'Expandir menu':'Recolher menu';const l=collapseButton.querySelector('.collapse-toggle-label');if(l)l.textContent=on?'Expandir menu':'Recolher menu';const i=collapseButton.querySelector('span[aria-hidden="true"]');if(i)i.textContent=on?'›':'‹';try{localStorage.setItem('vortexgrid-sidebar-collapsed',on?'1':'0');}catch{}});
+  try{if(localStorage.getItem('vortexgrid-sidebar-collapsed')==='1'){document.body.classList.add('sidebar-collapsed');collapseButton?.setAttribute('aria-pressed','true');collapseButton?.setAttribute('aria-label','Expandir menu');if(collapseButton)collapseButton.title='Expandir menu';const l=collapseButton?.querySelector('.collapse-toggle-label');if(l)l.textContent='Expandir menu';const i=collapseButton?.querySelector('span[aria-hidden="true"]');if(i)i.textContent='›';}}catch{}
+  document.addEventListener('keydown',e=>{const k=e.key.toLowerCase();if((e.ctrlKey||e.metaKey)&&k==='k'){e.preventDefault();globalSearchInput?.focus();globalSearchInput?.select();}else if(k==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();globalSearchInput?.focus();}else if(e.key==='Escape'){closeGlobalSearch();closeShortcuts();}});
 
   init();
 })();
