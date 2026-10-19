@@ -3045,9 +3045,14 @@ app.post('/api/invoices/:id/paghiper/pix', autenticado, somenteAdmin, async (req
     const result = gateway?.create_request?.result || gateway?.status_request?.result || gateway?.result;
     const transactionId = gateway?.create_request?.transaction_id ||
       gateway?.status_request?.transaction_id || gateway?.transaction_id;
-    const pixCode = gateway?.create_request?.pix_code ||
-      gateway?.pix_code || gateway?.pix_copy_paste || null;
+    const pixCodeValue = gateway?.create_request?.pix_code ||
+      gateway?.create_request?.emv || gateway?.pix_code || gateway?.pix_copy_paste || null;
+    const pixCode = typeof pixCodeValue === 'object'
+      ? (pixCodeValue.emv || pixCodeValue.pix_code || null)
+      : pixCodeValue;
     const pixUrl = gateway?.create_request?.pix_url ||
+      gateway?.create_request?.pix_code?.pix_url ||
+      gateway?.create_request?.pix_code?.qrcode_image_url ||
       gateway?.pix_url || gateway?.qrcode_image_url || null;
 
     if (result !== 'success' || !transactionId) {
