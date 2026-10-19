@@ -5417,3 +5417,99 @@ body.premium-hybrid-metallic { background:#DFE3E7; }
   html{scroll-behavior:auto}
   *,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}
 }
+
+
+/* =========================================================
+   VORTEXGRID CENTRAL — DASHBOARD SAAS LAYOUT COMPOSITION
+   Mantém os componentes e dados atuais; altera a apresentação.
+   ========================================================= */
+#app-view #page-content.vg-dashboard-ready{min-width:0}
+#app-view .vg-dashboard-layout{display:grid;gap:20px;min-width:0}
+#app-view .vg-dashboard-intro{display:grid;gap:17px;min-width:0}
+#app-view .vg-dashboard-intro>.page-header{margin:0;padding:0 0 3px;border:0;background:transparent}
+#app-view .vg-dashboard-intro>.page-header h1,
+#app-view .vg-dashboard-intro>.page-header h2{font-family:Manrope,"DM Sans",sans-serif;font-size:clamp(25px,2.2vw,32px);font-weight:800;letter-spacing:-1px;color:#252a30}
+#app-view .vg-dashboard-intro>.page-header p{max-width:680px;color:#707780;font-size:13px;line-height:1.6}
+#app-view .vg-dashboard-intro>.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin:0}
+#app-view .vg-dashboard-intro>.stats-grid.stats-grid-admin{grid-template-columns:repeat(5,minmax(0,1fr))}
+#app-view .vg-dashboard-intro .stat-card{display:flex;min-width:0;min-height:140px;flex-direction:column;justify-content:space-between;gap:14px;padding:17px;border:1px solid #d3d8de;border-radius:13px;background:linear-gradient(145deg,#f9fafb,#edf0f3);box-shadow:0 3px 12px rgba(32,36,42,.035)}
+#app-view .vg-dashboard-intro .stat-card:before{background:linear-gradient(90deg,#8d82ad,#c2bacf)}
+#app-view .vg-dashboard-intro .stat-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#app-view .vg-dashboard-intro .stat-label{color:#707780;font-size:11px;font-weight:700;line-height:1.4}
+#app-view .vg-dashboard-intro .stat-value,#app-view .vg-dashboard-intro .stat-number,#app-view .vg-dashboard-intro .stat-card h3{color:#252a30;font-family:Manrope,"DM Sans",sans-serif;font-size:clamp(20px,1.8vw,27px);font-weight:800;letter-spacing:-.8px}
+#app-view .vg-dashboard-main{min-width:0}
+#app-view .vg-dashboard-main>.dashboard-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(270px,1fr);gap:17px;margin:0}
+#app-view .vg-dashboard-main>.dashboard-grid>.content-card,
+#app-view .vg-dashboard-bottom>.content-card{min-width:0;padding:21px;border:1px solid #d2d7dd;border-radius:14px;background:linear-gradient(145deg,#f8f9fa 0%,#f0f2f4 100%);box-shadow:0 4px 15px rgba(32,36,42,.035)}
+#app-view .vg-dashboard-layout .panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:13px}
+#app-view .vg-dashboard-layout .panel-heading h2{color:#2b3036;font-family:Manrope,"DM Sans",sans-serif;font-size:16px;font-weight:800;letter-spacing:-.3px}
+#app-view .vg-dashboard-layout .panel-heading p{color:#7a8189;font-size:11px;line-height:1.5}
+#app-view .vg-dashboard-layout .section-eyebrow{color:#81788f;font-size:9px;font-weight:800;letter-spacing:1.1px}
+#app-view .vg-dashboard-layout .bar-chart{min-height:190px;margin-top:12px}
+#app-view .vg-dashboard-layout .mini-stats{display:grid;gap:0;margin-top:15px}
+#app-view .vg-dashboard-layout .mini-stats>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-top:1px solid #dfe3e7}
+#app-view .vg-dashboard-layout .mini-stats strong{color:#30363d;font-family:Manrope,sans-serif;font-size:18px;font-weight:800}
+#app-view .vg-dashboard-layout .mini-stats span{color:#747b83;font-size:11px}
+#app-view .vg-dashboard-layout .alert-center{margin:0;padding:15px 17px;border:1px solid #dfd4c5;border-radius:13px;background:#f8f4ee}
+#app-view .vg-dashboard-layout .alert-center .panel-heading{margin-bottom:9px}
+#app-view .vg-dashboard-layout .alert-center .panel-heading h2{font-size:14px}
+#app-view .vg-dashboard-layout .alert-list{display:grid;gap:7px}
+#app-view .vg-dashboard-layout .dashboard-alert{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;padding:9px 10px;border-radius:9px}
+#app-view .vg-dashboard-layout .dashboard-alert-copy strong{font-size:11px}
+#app-view .vg-dashboard-layout .dashboard-alert-copy p{font-size:10px;line-height:1.45}
+#app-view .vg-dashboard-layout .financial-overview{margin:0;padding:19px 21px;border:1px solid #d2d7dd;border-radius:14px;background:#f5f6f7}
+#app-view .vg-dashboard-layout .financial-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:18px}
+#app-view .vg-dashboard-layout .financial-summary-item{min-width:0;padding:0 15px;border-left:1px solid #dce0e4}
+#app-view .vg-dashboard-layout .financial-summary-item:first-child{padding-left:0;border-left:0}
+#app-view .vg-dashboard-layout .financial-summary-item strong{color:#2d3339;font-family:Manrope,sans-serif;font-size:19px;font-weight:800;letter-spacing:-.5px}
+#app-view .vg-dashboard-layout .financial-summary-item small{color:#858c93;font-size:10px;line-height:1.5}
+#app-view .vg-dashboard-layout .financial-composition{margin-top:18px}
+#app-view .vg-dashboard-layout .financial-progress{height:7px;border-radius:99px;background:#e0e4e7}
+#app-view .vg-dashboard-layout .financial-progress-current{background:#719781}
+#app-view .vg-dashboard-layout .financial-progress-overdue{background:#b97c5d}
+#app-view .vg-dashboard-bottom{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr);align-items:stretch;gap:17px;min-width:0}
+#app-view .vg-dashboard-bottom>.content-card{display:flex;flex-direction:column}
+#app-view .vg-dashboard-bottom .panel-heading{min-height:52px}
+#app-view .vg-dashboard-bottom .activity-row{grid-template-columns:34px minmax(0,1fr);gap:9px;padding:12px 0}
+#app-view .vg-dashboard-bottom .activity-marker{width:32px;height:32px;border-radius:9px}
+#app-view .vg-dashboard-bottom .activity-side{grid-column:2;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px}
+#app-view .vg-dashboard-bottom .activity-side>strong{font-size:10px}
+#app-view .vg-dashboard-bottom .list-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;padding:13px 0}
+#app-view .vg-dashboard-bottom .list-row-main{min-width:0}
+#app-view .vg-dashboard-bottom .list-row-main strong{display:block;overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+#app-view .vg-dashboard-bottom .list-row-main small{display:block;overflow:hidden;font-size:9px;line-height:1.5;text-overflow:ellipsis}
+#app-view .vg-dashboard-bottom .list-row-side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+#app-view .vg-dashboard-bottom .list-row-side>strong{font-size:11px;white-space:nowrap}
+#app-view .vg-dashboard-bottom .quick-link-list{display:grid;gap:8px;margin-top:15px}
+#app-view .vg-dashboard-bottom .quick-link{border-color:#dfe3e7;background:#f8f9fa}
+#app-view .vg-dashboard-layout .empty-state{padding:22px 10px;color:#858c93;font-size:11px;text-align:center}
+@media(max-width:1250px){
+ #app-view .vg-dashboard-intro>.stats-grid.stats-grid-admin{grid-template-columns:repeat(3,minmax(0,1fr))}
+ #app-view .vg-dashboard-bottom{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #app-view .vg-dashboard-bottom>.activity-center{grid-column:1/-1}
+}
+@media(max-width:980px){
+ #app-view .vg-dashboard-main>.dashboard-grid{grid-template-columns:minmax(0,1fr)}
+ #app-view .vg-dashboard-intro>.stats-grid,#app-view .vg-dashboard-intro>.stats-grid.stats-grid-admin{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #app-view .vg-dashboard-layout .financial-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:640px){
+ #app-view .vg-dashboard-layout{gap:15px}
+ #app-view .vg-dashboard-intro>.page-header{align-items:flex-start;flex-direction:column}
+ #app-view .vg-dashboard-intro>.page-header h1,#app-view .vg-dashboard-intro>.page-header h2{font-size:25px}
+ #app-view .vg-dashboard-intro>.stats-grid,#app-view .vg-dashboard-intro>.stats-grid.stats-grid-admin{gap:9px}
+ #app-view .vg-dashboard-intro .stat-card{min-height:125px;padding:14px 12px}
+ #app-view .vg-dashboard-intro .stat-label{font-size:10px}
+ #app-view .vg-dashboard-intro .stat-value,#app-view .vg-dashboard-intro .stat-number,#app-view .vg-dashboard-intro .stat-card h3{font-size:20px}
+ #app-view .vg-dashboard-main>.dashboard-grid>.content-card,#app-view .vg-dashboard-bottom>.content-card{padding:15px}
+ #app-view .vg-dashboard-layout .financial-summary-grid{grid-template-columns:minmax(0,1fr);gap:13px}
+ #app-view .vg-dashboard-layout .financial-summary-item{padding:0;border:0}
+ #app-view .vg-dashboard-bottom{grid-template-columns:minmax(0,1fr)}
+ #app-view .vg-dashboard-bottom>.activity-center{grid-column:auto}
+ #app-view .vg-dashboard-layout .dashboard-alert{grid-template-columns:28px minmax(0,1fr);gap:8px}
+ #app-view .vg-dashboard-layout .dashboard-alert .btn{grid-column:2;justify-self:start}
+}
+@media(max-width:390px){
+ #app-view .vg-dashboard-intro>.stats-grid,#app-view .vg-dashboard-intro>.stats-grid.stats-grid-admin{grid-template-columns:minmax(0,1fr)}
+ #app-view .vg-dashboard-intro .stat-card{min-height:110px}
+}
