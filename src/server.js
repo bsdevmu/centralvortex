@@ -2870,116 +2870,106 @@ app.patch('/api/invoices/:id/cancel', autenticado, somenteAdmin, async (req, res
 });
 
 // --------------------------------------------------
-// PAGHIPER PIX — EMISSÃO E NOTIFICAÇÃO VALIDADA
+// MERCADO PAGO PIX — EMISSÃO E CONFIRMAÇÃO VALIDADA
 // --------------------------------------------------
 
-const PAGHIPER_CREATE_URL = 'https://pix.paghiper.com/invoice/create/';
-const PAGHIPER_NOTIFICATION_URL = 'https://pix.paghiper.com/invoice/notification/';
+const crypto = require('crypto');
+const MP_API_BASE = 'https://api.mercadopago.com';
 
-function paghiperConfigurado() {
-  return Boolean(process.env.PAGHIPER_API_KEY && process.env.PAGHIPER_TOKEN);
+function mercadoPagoConfigurado() {
+  return Boolean(process.env.MP_ACCESS_TOKEN && process.env.MP_WEBHOOK_SECRET);
 }
 
-async function garantirTabelaPagHiper() {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS paghiper_transactions (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      invoice_id BIGINT UNSIGNED NOT NULL,
-      provider VARCHAR(30) NOT NULL DEFAULT 'paghiper',
-      order_id VARCHAR(64) NOT NULL,
-      transaction_id VARCHAR(64) DEFAULT NULL,
-      status VARCHAR(24) NOT NULL DEFAULT 'created',
-      amount DECIMAL(12,2) NOT NULL,
-      pix_code TEXT DEFAULT NULL,
-      pix_url TEXT DEFAULT NULL,
-      last_notification_id VARCHAR(128) DEFAULT NULL,
-      gateway_response LONGTEXT DEFAULT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      UNIQUE KEY uq_paghiper_order_id (order_id),
-      UNIQUE KEY uq_paghiper_transaction_id (transaction_id),
-      KEY idx_paghiper_invoice_id (invoice_id),
-      KEY idx_paghiper_status (status)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-}
-
-async function paghiperPost(url, payload) {
+async function mercadoPagoRequest(url, options = {}) {
   const response = await fetch(url, {
-    method: 'POST',
+    ...options,
     headers: {
+      'Authorization': `Bearer ${process.env.MP_ACCESS_TOKEN}`,
       'Accept': 'application/json',
-      'Content-Type': 'application/json'
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {})
     },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(15000)
+    signal: AbortSignal.timeout(20000)
   });
 
   const raw = await response.text();
   let data;
-
   try {
-    data = JSON.parse(raw);
+    data = raw ? JSON.parse(raw) : {};
   } catch (_) {
-    throw new Error('Resposta inválida recebida da PagHiper.');
+    throw new Error(`Resposta inválida do Mercado Pago (HTTP ${response.status}).`);
   }
 
   if (!response.ok) {
-    throw new Error(`PagHiper respondeu HTTP ${response.status}.`);
+    const causes = Array.isArray(data.cause)
+      ? data.cause.map(item => item.code || item.description).filter(Boolean).join('; ')
+      : '';
+    const detail = data.message || causes || data.error || `HTTP ${response.status}`;
+    throw new Error(`Mercado Pago: ${String(detail).slice(0, 350)}`);
   }
-
   return data;
 }
 
-function paghiperStatusRequest(data) {
-  return data && data.status_request && typeof data.status_request === 'object'
-    ? data.status_request
-    : data;
+async function garantirTabelaMercadoPago() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS mercadopago_transactions (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      invoice_id BIGINT UNSIGNED NOT NULL,
+      payment_id VARCHAR(64) NOT NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      amount DECIMAL(12,2) NOT NULL,
+      pix_code TEXT DEFAULT NULL,
+      pix_url TEXT DEFAULT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_mp_payment_id (payment_id),
+      KEY idx_mp_invoice_id (invoice_id),
+      KEY idx_mp_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
 }
 
-function paghiperCentavos(status) {
-  const candidates = [
-    status?.value_cents,
-    status?.total_cents,
-    status?.amount_cents,
-    status?.price_cents,
-    status?.total_paid_cents
-  ];
+function validarAssinaturaMercadoPago(req) {
+  const segredo = process.env.MP_WEBHOOK_SECRET;
+  const assinatura = req.get('x-signature') || '';
+  const requestId = req.get('x-request-id') || '';
+  const dataIdRaw = typeof req.query['data.id'] === 'string'
+    ? req.query['data.id']
+    : (typeof req.query.id === 'string' ? req.query.id : '');
+  const dataId = dataIdRaw.toLowerCase();
 
-  for (const candidate of candidates) {
-    if (candidate !== undefined && candidate !== null && candidate !== '') {
-      const n = Number(candidate);
-      if (Number.isFinite(n) && n >= 0) return Math.round(n);
-    }
-  }
+  if (!segredo || !assinatura || !requestId || !dataId) return false;
 
-  const reais = [status?.value, status?.total, status?.amount, status?.total_paid];
-  for (const candidate of reais) {
-    if (candidate !== undefined && candidate !== null && candidate !== '') {
-      const n = Number(String(candidate).replace(',', '.'));
-      if (Number.isFinite(n) && n >= 0) return Math.round(n * 100);
-    }
-  }
+  const partes = Object.fromEntries(
+    assinatura.split(',').map(parte => {
+      const separador = parte.trim().indexOf('=');
+      return separador < 0
+        ? ['', '']
+        : [parte.trim().slice(0, separador), parte.trim().slice(separador + 1)];
+    }).filter(([chave, valor]) => chave && valor)
+  );
+  if (!partes.ts || !partes.v1) return false;
 
-  return null;
+  const manifesto = `id:${dataId};request-id:${requestId};ts:${partes.ts};`;
+  const esperado = crypto.createHmac('sha256', segredo).update(manifesto).digest('hex');
+  const recebidoBuffer = Buffer.from(partes.v1, 'hex');
+  const esperadoBuffer = Buffer.from(esperado, 'hex');
+
+  return recebidoBuffer.length === esperadoBuffer.length &&
+    recebidoBuffer.length > 0 &&
+    crypto.timingSafeEqual(recebidoBuffer, esperadoBuffer);
 }
 
-// Emite uma cobrança somente quando um administrador chamar esta rota.
-// Não é executada automaticamente ao criar uma fatura.
-app.post('/api/invoices/:id/paghiper/pix', autenticado, somenteAdmin, async (req, res) => {
-  if (!paghiperConfigurado()) {
-    return erro(res, 503, 'PagHiper não configurada nas variáveis de ambiente.');
+app.post('/api/invoices/:id/mercadopago/pix', autenticado, somenteAdmin, async (req, res) => {
+  if (!process.env.MP_ACCESS_TOKEN) {
+    return erro(res, 503, 'Mercado Pago não configurado: falta MP_ACCESS_TOKEN no ambiente.');
   }
 
-  let conn;
   try {
     const invoiceId = validarId(req.params.id);
     const cpf = typeof req.body.payer_cpf_cnpj === 'string'
       ? req.body.payer_cpf_cnpj.replace(/\D/g, '')
-      : '';
-    const phone = typeof req.body.payer_phone === 'string' || typeof req.body.payer_phone === 'number'
-      ? String(req.body.payer_phone).replace(/\D/g, '')
       : '';
     const daysDue = req.body.days_due_date === undefined ? 1 : Number(req.body.days_due_date);
 
@@ -2987,15 +2977,11 @@ app.post('/api/invoices/:id/paghiper/pix', autenticado, somenteAdmin, async (req
     if (!/^\d{11}$|^\d{14}$/.test(cpf)) {
       return erro(res, 400, 'Informe CPF ou CNPJ válido do pagador (somente números).');
     }
-    if (phone && (phone.length < 10 || phone.length > 15)) {
-      return erro(res, 400, 'Telefone inválido. Informe DDD e número.');
-    }
-    if (!Number.isInteger(daysDue) || daysDue < 1 || daysDue > 400) {
-      return erro(res, 400, 'O vencimento do PIX deve ficar entre 1 e 400 dias.');
+    if (!Number.isInteger(daysDue) || daysDue < 1 || daysDue > 30) {
+      return erro(res, 400, 'O vencimento do PIX deve ficar entre 1 e 30 dias.');
     }
 
-    await garantirTabelaPagHiper();
-
+    await garantirTabelaMercadoPago();
     const [rows] = await db.query(
       `SELECT i.id, i.client_id, i.description, i.amount, i.status,
               c.name AS client_name, c.email AS client_email
@@ -3010,304 +2996,89 @@ app.post('/api/invoices/:id/paghiper/pix', autenticado, somenteAdmin, async (req
     if (!['pending', 'overdue'].includes(invoice.status)) {
       return erro(res, 409, 'Somente faturas pendentes ou vencidas podem receber um PIX.');
     }
+
     const amount = Number(invoice.amount);
-    if (!Number.isFinite(amount) || amount < 3 || amount > 99999999) {
-      return erro(res, 400, 'A PagHiper aceita PIX a partir de R$ 3,00. Confira o valor da fatura.');
+    if (!Number.isFinite(amount) || amount < 0.01 || amount > 99999999) {
+      return erro(res, 400, 'Valor da fatura inválido para emissão do PIX.');
     }
     if (!validarEmail(invoice.client_email)) {
       return erro(res, 400, 'O cadastro do cliente precisa ter um e-mail válido antes de emitir o PIX.');
     }
-    if (!validarTexto(invoice.client_name, 255)) {
-      return erro(res, 400, 'O cadastro do cliente precisa ter um nome válido.');
-    }
 
-    const orderId = `vg-inv-${invoice.id}-${Date.now()}`.slice(0, 64);
-    const notificationUrl = `${String(process.env.PUBLIC_BASE_URL || 'https://central.vortexgrid.com.br').replace(/\/$/, '')}/api/webhooks/paghiper`;
+    const notificationUrl = `${String(process.env.PUBLIC_BASE_URL || 'https://central.vortexgrid.com.br').replace(/\/$/, '')}/api/webhooks/mercadopago`;
+    const idempotencyKey = crypto.randomUUID();
     const payload = {
-      apiKey: process.env.PAGHIPER_API_KEY,
-      order_id: orderId,
-      payer_email: invoice.client_email,
-      payer_name: invoice.client_name,
-      payer_cpf_cnpj: cpf,
-      days_due_date: String(daysDue),
+      transaction_amount: Number(amount.toFixed(2)),
+      description: String(invoice.description || `Fatura VortexGrid #${invoice.id}`).slice(0, 250),
+      payment_method_id: 'pix',
+      external_reference: `vortexgrid-invoice-${invoice.id}`,
       notification_url: notificationUrl,
-      fixed_description: true,
-      items: [{
-        item_id: String(invoice.id),
-        description: String(invoice.description || `Fatura VortexGrid #${invoice.id}`).slice(0, 255),
-        quantity: '1',
-        price_cents: String(Math.round(amount * 100))
-      }]
+      date_of_expiration: new Date(Date.now() + daysDue * 86400000).toISOString().replace(/\.\d{3}Z$/, '-03:00'),
+      payer: {
+        email: invoice.client_email,
+        first_name: String(invoice.client_name || 'Cliente').trim().split(/\s+/)[0].slice(0, 80),
+        identification: {
+          type: cpf.length === 11 ? 'CPF' : 'CNPJ',
+          number: cpf
+        }
+      }
     };
-    if (phone) payload.payer_phone = phone;
 
-    const gateway = await paghiperPost(PAGHIPER_CREATE_URL, payload);
-    const result = gateway?.create_request?.result || gateway?.status_request?.result || gateway?.result;
-    const transactionId = gateway?.create_request?.transaction_id ||
-      gateway?.status_request?.transaction_id || gateway?.transaction_id;
-    const pixCodeValue = gateway?.create_request?.pix_code ||
-      gateway?.create_request?.emv || gateway?.pix_code || gateway?.pix_copy_paste || null;
-    const pixCode = typeof pixCodeValue === 'object'
-      ? (pixCodeValue.emv || pixCodeValue.pix_code || null)
-      : pixCodeValue;
-    const pixUrl = gateway?.create_request?.pix_url ||
-      gateway?.create_request?.pix_code?.pix_url ||
-      gateway?.create_request?.pix_code?.qrcode_image_url ||
-      gateway?.pix_url || gateway?.qrcode_image_url || null;
+    const payment = await mercadoPagoRequest(`${MP_API_BASE}/v1/payments`, {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(payload)
+    });
 
-    if (result !== 'success' || !transactionId) {
-      console.error('PagHiper não emitiu o PIX:', {
-        result: result || 'ausente',
-        response_message: gateway?.create_request?.response_message ||
-          gateway?.status_request?.response_message || gateway?.response_message || 'sem detalhe'
+    const paymentId = payment.id ? String(payment.id) : '';
+    const pixData = payment.point_of_interaction?.transaction_data || {};
+    const pixCode = typeof pixData.qr_code === 'string' ? pixData.qr_code : null;
+    const pixUrl = typeof pixData.ticket_url === 'string' ? pixData.ticket_url : null;
+
+    if (!paymentId || (!pixCode && !pixUrl)) {
+      console.error('Mercado Pago não retornou dados PIX esperados:', {
+        paymentIdPresent: Boolean(paymentId),
+        status: payment.status || 'ausente',
+        detail: payment.status_detail || 'sem detalhe'
       });
-      return erro(res, 502, 'A PagHiper não confirmou a emissão do PIX. Nenhuma cobrança foi registrada no Central.');
+      return erro(res, 502, 'O Mercado Pago não retornou os dados esperados do PIX. Confira o log.');
     }
 
     await db.query(
-      `INSERT INTO paghiper_transactions
-        (invoice_id, order_id, transaction_id, status, amount, pix_code, pix_url, gateway_response)
-       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`,
-      [
-        invoice.id, orderId, String(transactionId), amount,
-        pixCode, pixUrl, JSON.stringify(gateway).slice(0, 60000)
-      ]
+      `INSERT INTO mercadopago_transactions
+        (invoice_id, payment_id, status, amount, pix_code, pix_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [invoice.id, paymentId, String(payment.status || 'pending'), amount, pixCode, pixUrl]
     );
 
     return res.status(201).json({
-      mensagem: 'PIX emitido pela PagHiper.',
+      mensagem: 'PIX emitido pelo Mercado Pago.',
       invoice_id: invoice.id,
-      order_id: orderId,
-      transaction_id: String(transactionId),
+      payment_id: paymentId,
       amount,
-      status: 'pending',
+      status: payment.status || 'pending',
       pix_code: pixCode,
       pix_url: pixUrl,
-      gateway_message: gateway?.create_request?.response_message ||
-        gateway?.status_request?.response_message || null
+      qr_code_base64: pixData.qr_code_base64 || null,
+      expiration_date: payment.date_of_expiration || null
     });
   } catch (e) {
-    console.error('Erro emissão PIX PagHiper:', e.code || e.message || 'erro');
-    return erro(res, 502, 'Não foi possível emitir o PIX. Confira as credenciais e o log da aplicação.');
-  } finally {
-    if (conn) conn.release();
+    console.error('Erro emissão PIX Mercado Pago:', e.message || e.code || 'erro');
+    return erro(res, 502, 'Não foi possível emitir o PIX pelo Mercado Pago. Confira as credenciais e o log da aplicação.');
   }
 });
 
-// Acesso GET serve apenas para diagnóstico manual. A PagHiper envia
-// notificações por POST; abrir a URL no navegador não simula um pagamento.
-app.get('/api/webhooks/paghiper', (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  return res.status(405).json({
-    erro: 'Endpoint disponível. O webhook da PagHiper recebe notificações por POST.'
-  });
-});
-
-// A PagHiper envia o primeiro aviso como form-urlencoded. A confirmação é
-// consultada na API oficial antes de qualquer alteração financeira.
-app.post('/api/webhooks/paghiper', async (req, res) => {
-  if (!paghiperConfigurado()) {
-    return erro(res, 503, 'Webhook PagHiper não configurado.');
-  }
-
-  const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey : '';
-  const transactionId = typeof req.body?.transaction_id === 'string'
-    ? req.body.transaction_id.trim()
-    : '';
-  const notificationId = typeof req.body?.notification_id === 'string'
-    ? req.body.notification_id.trim()
-    : '';
-
-  if (
-    !apiKey ||
-    apiKey !== process.env.PAGHIPER_API_KEY ||
-    !/^[a-zA-Z0-9_-]{8,64}$/.test(transactionId) ||
-    !/^[a-zA-Z0-9_-]{8,128}$/.test(notificationId)
-  ) {
-    console.warn('Webhook PagHiper rejeitado: parâmetros inválidos.');
-    return erro(res, 400, 'Notificação PagHiper inválida.');
-  }
-
-  try {
-    await garantirTabelaPagHiper();
-
-    const [rows] = await db.query(
-      `SELECT id, invoice_id, order_id, amount, status
-       FROM paghiper_transactions
-       WHERE transaction_id = ? LIMIT 1`,
-      [transactionId]
-    );
-    const local = rows[0];
-
-    if (!local) {
-      console.warn('Webhook PagHiper sem transação local correspondente.');
-      return erro(res, 404, 'Transação não encontrada.');
-    }
-
-    const notification = await paghiperPost(PAGHIPER_NOTIFICATION_URL, {
-      apiKey: process.env.PAGHIPER_API_KEY,
-      token: process.env.PAGHIPER_TOKEN,
-      transaction_id: transactionId,
-      notification_id: notificationId
-    });
-    const status = paghiperStatusRequest(notification);
-
-    if (
-      (notification?.status_request?.result || notification?.result) !== 'success' ||
-      String(status.transaction_id || '') !== transactionId ||
-      String(status.order_id || '') !== String(local.order_id)
-    ) {
-      console.warn('PagHiper: consulta de notificação não corresponde à transação local.');
-      return erro(res, 409, 'A confirmação consultada não corresponde à transação registrada.');
-    }
-
-    const statusGateway = String(status.status || '').toLowerCase();
-    const paidStatuses = ['paid', 'completed'];
-    const isPaid = paidStatuses.includes(statusGateway);
-    const paidCents = paghiperCentavos(status);
-    const expectedCents = Math.round(Number(local.amount) * 100);
-
-    if (isPaid && (paidCents === null || paidCents !== expectedCents)) {
-      console.error('PagHiper: pagamento não conciliado por valor ausente ou divergente.', {
-        invoiceId: local.invoice_id,
-        transactionId,
-        expectedCents,
-        receivedCents: paidCents
-      });
-      return erro(res, 409, 'Pagamento recebido, mas o valor não pôde ser conciliado automaticamente. Verificação manual necessária.');
-    }
-
-    const mapStatus = {
-      pending: 'pending',
-      paid: 'paid',
-      completed: 'paid',
-      canceled: 'cancelled',
-      cancelled: 'cancelled',
-      refunded: 'refunded',
-      processing: 'processing'
-    };
-    const localStatus = mapStatus[statusGateway] || 'unknown';
-
-    let conn;
-    try {
-      conn = await db.getConnection();
-      await conn.beginTransaction();
-
-      const [lockedRows] = await conn.query(
-        `SELECT id, amount, status FROM invoices WHERE id = ? FOR UPDATE`,
-        [local.invoice_id]
-      );
-      const invoice = lockedRows[0];
-
-      if (!invoice) {
-        await conn.rollback();
-        return erro(res, 404, 'Fatura associada não encontrada.');
-      }
-
-      await conn.query(
-        `UPDATE paghiper_transactions
-         SET status = ?, last_notification_id = ?, gateway_response = ?
-         WHERE id = ?`,
-        [localStatus, notificationId, JSON.stringify(notification).slice(0, 60000), local.id]
-      );
-
-      if (isPaid && ['pending', 'overdue'].includes(invoice.status)) {
-        await conn.query(
-          `INSERT INTO payments (invoice_id, amount, method, reference)
-           VALUES (?, ?, 'paghiper_pix', ?)`,
-          [invoice.id, invoice.amount, transactionId]
-        );
-        await conn.query(
-          `UPDATE invoices SET status = 'paid' WHERE id = ?`,
-          [invoice.id]
-        );
-      } else if (isPaid && invoice.status !== 'paid') {
-        await conn.rollback();
-        return erro(res, 409, 'A fatura não está pendente; confira o estado financeiro manualmente.');
-      }
-
-      await conn.commit();
-    } catch (e) {
-      if (conn) await conn.rollback().catch(() => {});
-      throw e;
-    } finally {
-      if (conn) conn.release();
-    }
-
-    console.info('Notificação PagHiper processada.', {
-      invoiceId: local.invoice_id,
-      transactionId,
-      status: localStatus
-    });
-    return res.status(200).json({ recebido: true, status: localStatus });
-  } catch (e) {
-    console.error('Erro webhook PagHiper:', e.code || e.message || 'erro');
-    return erro(res, 500, 'Não foi possível validar a notificação PagHiper.');
-  }
-});
-
-// --------------------------------------------------
-// --------------------------------------------------
-// WEBHOOK MERCADO PAGO — RECEBIMENTO SEGURO
-// --------------------------------------------------
-
-const crypto = require('crypto');
-
-function validarAssinaturaMercadoPago(req) {
-  const segredo = process.env.MP_WEBHOOK_SECRET;
-  const assinatura = req.get('x-signature') || '';
-  const requestId = req.get('x-request-id') || '';
-  const dataId = typeof req.query['data.id'] === 'string'
-    ? req.query['data.id'].toLowerCase()
-    : '';
-
-  // Sem o segredo cadastrado, a notificação não é considerada confiável.
-  if (!segredo || !assinatura || !requestId || !dataId) {
-    return false;
-  }
-
-  const partes = Object.fromEntries(
-    assinatura.split(',').map(parte => {
-      const separador = parte.trim().indexOf('=');
-      return separador < 0
-        ? ['', '']
-        : [
-            parte.trim().slice(0, separador),
-            parte.trim().slice(separador + 1)
-          ];
-    }).filter(([chave, valor]) => chave && valor)
-  );
-
-  if (!partes.ts || !partes.v1) {
-    return false;
-  }
-
-  const manifesto = `id:${dataId};request-id:${requestId};ts:${partes.ts};`;
-  const esperado = crypto
-    .createHmac('sha256', segredo)
-    .update(manifesto)
-    .digest('hex');
-
-  const recebidoBuffer = Buffer.from(partes.v1, 'hex');
-  const esperadoBuffer = Buffer.from(esperado, 'hex');
-
-  return recebidoBuffer.length === esperadoBuffer.length &&
-    crypto.timingSafeEqual(recebidoBuffer, esperadoBuffer);
-}
-
-// GET serve apenas para confirmar que o caminho existe no servidor.
-// O Mercado Pago envia notificações por POST.
 app.get('/api/webhooks/mercadopago', (req, res) => {
   res.set('Cache-Control', 'no-store');
   return res.status(405).json({
-    erro: 'Endpoint disponível. O webhook recebe notificações por POST.'
+    erro: 'Endpoint disponível. O webhook do Mercado Pago recebe notificações por POST.'
   });
 });
 
 app.post('/api/webhooks/mercadopago', async (req, res) => {
-  if (!process.env.MP_WEBHOOK_SECRET) {
-    console.error('Webhook Mercado Pago recebido, mas MP_WEBHOOK_SECRET não está configurado.');
-    return erro(res, 503, 'Webhook ainda não configurado no servidor.');
+  if (!process.env.MP_ACCESS_TOKEN || !process.env.MP_WEBHOOK_SECRET) {
+    console.error('Webhook Mercado Pago recebido, mas faltam MP_ACCESS_TOKEN ou MP_WEBHOOK_SECRET.');
+    return erro(res, 503, 'Webhook Mercado Pago não configurado no servidor.');
   }
 
   if (!validarAssinaturaMercadoPago(req)) {
@@ -3315,19 +3086,87 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
     return erro(res, 401, 'Assinatura do webhook inválida.');
   }
 
-  // Nesta primeira etapa apenas validamos a origem e confirmamos o recebimento.
-  // A confirmação financeira e a atualização da fatura serão implementadas
-  // após consultar a API do Mercado Pago e registrar o evento de forma idempotente.
-  const tipo = typeof req.body?.type === 'string'
-    ? req.body.type.slice(0, 80)
-    : (typeof req.body?.action === 'string' ? req.body.action.slice(0, 80) : 'desconhecido');
+  const topic = String(req.query.type || req.body?.type || req.body?.topic || '').toLowerCase();
+  const paymentId = String(req.query['data.id'] || req.query.id || req.body?.data?.id || '').trim();
+  if (!paymentId || (topic && !['payment', 'payments'].includes(topic))) {
+    return res.status(200).json({ recebido: true, ignorado: true });
+  }
 
-  console.info('Webhook Mercado Pago autenticado recebido.', {
-    tipo,
-    requestId: req.get('x-request-id')
-  });
+  let conn;
+  try {
+    await garantirTabelaMercadoPago();
+    const payment = await mercadoPagoRequest(`${MP_API_BASE}/v1/payments/${encodeURIComponent(paymentId)}`, {
+      method: 'GET'
+    });
+    const [transactions] = await db.query(
+      'SELECT id, invoice_id, payment_id, amount, status FROM mercadopago_transactions WHERE payment_id = ? LIMIT 1',
+      [String(payment.id)]
+    );
+    const local = transactions[0];
+    if (!local) {
+      console.warn('Webhook Mercado Pago sem transação local correspondente.', { paymentId: String(payment.id) });
+      return res.status(200).json({ recebido: true, ignorado: true });
+    }
 
-  return res.status(200).json({ recebido: true });
+    const paidAmount = Number(payment.transaction_amount);
+    const expectedAmount = Number(local.amount);
+    const expectedReference = `vortexgrid-invoice-${local.invoice_id}`;
+    if (payment.external_reference !== expectedReference ||
+        !Number.isFinite(paidAmount) ||
+        Math.round(paidAmount * 100) !== Math.round(expectedAmount * 100)) {
+      console.error('Mercado Pago: pagamento não conciliado por referência ou valor.', {
+        paymentId: String(payment.id),
+        invoiceId: local.invoice_id
+      });
+      return erro(res, 409, 'Pagamento não corresponde à fatura local.');
+    }
+
+    const status = String(payment.status || 'unknown');
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+    await conn.query(
+      'UPDATE mercadopago_transactions SET status = ? WHERE payment_id = ?',
+      [status.slice(0, 32), String(payment.id)]
+    );
+
+    if (status === 'approved') {
+      const [invoiceRows] = await conn.query(
+        'SELECT id, amount, status FROM invoices WHERE id = ? FOR UPDATE',
+        [local.invoice_id]
+      );
+      const invoice = invoiceRows[0];
+      if (!invoice || Math.round(Number(invoice.amount) * 100) !== Math.round(expectedAmount * 100)) {
+        await conn.rollback();
+        return erro(res, 409, 'A fatura não corresponde ao valor confirmado pelo Mercado Pago.');
+      }
+
+      const [existingPayments] = await conn.query(
+        "SELECT id FROM payments WHERE reference = ? LIMIT 1",
+        [`mercadopago:${payment.id}`]
+      );
+      if (!existingPayments.length) {
+        await conn.query(
+          'INSERT INTO payments (invoice_id, amount, method, reference) VALUES (?, ?, ?, ?)',
+          [local.invoice_id, expectedAmount, 'mercadopago_pix', `mercadopago:${payment.id}`]
+        );
+      }
+      await conn.query("UPDATE invoices SET status = 'paid' WHERE id = ?", [local.invoice_id]);
+    }
+
+    await conn.commit();
+    console.info('Webhook Mercado Pago processado.', {
+      paymentId: String(payment.id),
+      invoiceId: local.invoice_id,
+      status
+    });
+    return res.status(200).json({ recebido: true, status });
+  } catch (e) {
+    if (conn) await conn.rollback().catch(() => {});
+    console.error('Erro webhook Mercado Pago:', e.message || e.code || 'erro');
+    return erro(res, 500, 'Não foi possível validar a notificação do Mercado Pago.');
+  } finally {
+    if (conn) conn.release();
+  }
 });
 
 // --------------------------------------------------
