@@ -3310,3 +3310,215 @@ dialog::backdrop {
     align-items: flex-start;
   }
 }
+
+
+/* =========================================================
+   DASHBOARD EXECUTIVO — ALERTAS E HIERARQUIA VISUAL
+   ========================================================= */
+
+.content > .alert-center {
+  margin-bottom: 20px;
+  padding: 21px 23px;
+}
+
+.alert-center .panel-heading {
+  margin-bottom: 16px;
+}
+
+.section-eyebrow {
+  display: inline-block;
+  margin-bottom: 5px;
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.25px;
+}
+
+.alert-center .panel-heading h2 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -.3px;
+}
+
+.alert-center .panel-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.alert-count {
+  display: inline-flex;
+  min-height: 29px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.alert-list {
+  display: grid;
+  gap: 9px;
+}
+
+.dashboard-alert {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.dashboard-alert-danger {
+  border-left-color: var(--danger);
+  background: linear-gradient(90deg, rgba(197, 62, 75, .055), transparent 44%);
+}
+
+.dashboard-alert-warning {
+  border-left-color: var(--warning);
+  background: linear-gradient(90deg, rgba(169, 105, 10, .055), transparent 44%);
+}
+
+.dashboard-alert-info {
+  border-left-color: var(--info);
+  background: linear-gradient(90deg, rgba(50, 104, 216, .055), transparent 44%);
+}
+
+.dashboard-alert-symbol {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.dashboard-alert-danger .dashboard-alert-symbol {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.dashboard-alert-warning .dashboard-alert-symbol {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.dashboard-alert-info .dashboard-alert-symbol {
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.dashboard-alert-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 3px;
+}
+
+.dashboard-alert-copy strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dashboard-alert-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.dashboard-alert .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.alert-center-clear {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border-color: var(--success-border);
+  background: linear-gradient(100deg, rgba(22, 131, 93, .055), var(--surface) 55%);
+}
+
+.alert-clear-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--success-border);
+  border-radius: 11px;
+  background: var(--success-bg);
+  color: var(--success);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.alert-center-clear > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.alert-center-clear strong {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.alert-center-clear p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .content > .alert-center {
+    padding: 17px;
+  }
+
+  .dashboard-alert {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .dashboard-alert-copy {
+    flex-basis: calc(100% - 48px);
+  }
+
+  .dashboard-alert .btn {
+    margin-left: 44px;
+  }
+
+  .alert-center-clear {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .alert-center-clear .alert-count {
+    margin-left: 49px;
+  }
+
+  .alert-center .panel-heading {
+    align-items: flex-start;
+  }
+}
