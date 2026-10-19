@@ -111,6 +111,13 @@
       );
     }
 
+    // Invalida resultados globais após qualquer operação de escrita, evitando
+    // que a busca continue exibindo dados antigos após cadastros/edições.
+    const method = String(options.method || 'GET').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      state.globalSearchCache = null;
+    }
+
     return data;
   }
 
@@ -2925,6 +2932,30 @@
   function resultButton(o){const k=o.type==='client'?'Cliente':o.type==='service'?'Serviço':'Fatura',sym=o.type==='client'?'♙':o.type==='service'?'▦':'R$';const page=o.action?'':o.page;return `<button type="button" class="global-search-result" role="option" data-page="${escapeHTML(page||'')}" data-action="${escapeHTML(o.action||'')}" data-id="${escapeHTML(o.id??'')}"><span class="global-search-result-icon global-search-result-${o.type}">${sym}</span><span class="global-search-result-copy"><strong>${escapeHTML(o.title||'Registro')}</strong><small>${escapeHTML(o.description||'')}</small></span><span class="global-search-result-kind">${k}</span></button>`;}
   async function runGlobalSearch(term,id){globalSearchResults.hidden=false;globalSearchResults.innerHTML='<div class="global-search-message">Buscando registros...</div>';try{const d=await globalData();if(id!==globalSearchRequest)return;const q=term.toLocaleLowerCase('pt-BR'),out=[];d.clients.filter(x=>searchText([x.name,x.email,x.phone,x.document,x.id]).includes(q)).slice(0,5).forEach(x=>out.push(resultButton({type:'client',id:x.id,action:'client-record',title:x.name||x.email||'Cliente #'+x.id,description:[x.email,x.phone].filter(Boolean).join(' · ')})));d.services.filter(x=>searchText([x.name,x.title,x.description,x.category_name,x.id,x.status]).includes(q)).slice(0,4).forEach(x=>out.push(resultButton({type:'service',id:x.id,page:'services',title:x.name||x.title||'Serviço #'+x.id,description:[x.category_name,x.status,x.description].filter(Boolean).join(' · ')})));d.invoices.filter(x=>searchText([x.client_name,x.description,x.id,x.status]).includes(q)).slice(0,4).forEach(x=>out.push(resultButton({type:'invoice',id:x.id,page:'finance',title:x.client_name||'Fatura #'+x.id,description:[x.description,x.status,x.amount!==undefined?money(x.amount):''].filter(Boolean).join(' · ')})));globalSearchResults.innerHTML=out.length?'<div class="global-search-heading">RESULTADOS ENCONTRADOS</div>'+out.join(''):'<div class="global-search-message">Nenhum resultado para “'+escapeHTML(term)+'”.</div>';}catch{if(id===globalSearchRequest)globalSearchResults.innerHTML='<div class="global-search-message">Não foi possível concluir a busca agora.</div>';}}
   if(globalSearchInput&&globalSearchResults){globalSearchInput.addEventListener('input',()=>{clearTimeout(globalSearchTimer);const q=globalSearchInput.value.trim(),id=++globalSearchRequest;globalSearchInput.setAttribute('aria-expanded','true');if(q.length<2){globalSearchResults.innerHTML='<div class="global-search-message">Digite pelo menos 2 caracteres.</div>';globalSearchResults.hidden=false;return;}globalSearchTimer=setTimeout(()=>runGlobalSearch(q,id),220);});globalSearchInput.addEventListener('focus',()=>{if(globalSearchInput.value.trim().length<2){globalSearchResults.innerHTML='<div class="global-search-message">Busque clientes, serviços e faturas.</div>';globalSearchResults.hidden=false;}});}
+  if(globalSearchInput&&globalSearchResults){
+    globalSearchInput.addEventListener('keydown',event=>{
+      if(!['ArrowDown','ArrowUp'].includes(event.key)) return;
+      const results=[...globalSearchResults.querySelectorAll('.global-search-result')];
+      if(!results.length) return;
+      event.preventDefault();
+      if(event.key==='ArrowDown') results[0].focus();
+      else results[results.length-1].focus();
+    });
+    globalSearchResults.addEventListener('keydown',event=>{
+      const item=event.target.closest('.global-search-result');
+      if(!item) return;
+      const results=[...globalSearchResults.querySelectorAll('.global-search-result')];
+      const index=results.indexOf(item);
+      if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+        event.preventDefault();
+        const next=(index+(event.key==='ArrowDown'?1:-1)+results.length)%results.length;
+        results[next].focus();
+      } else if(event.key==='Escape'){
+        closeGlobalSearch();
+        globalSearchInput.focus();
+      }
+    });
+  }
   document.addEventListener('click',e=>{const t=e.target;if(!(t instanceof Element))return;if(globalSearchWrap&&!globalSearchWrap.contains(t))closeGlobalSearch();if(shortcutsMenu&&!shortcutsMenu.contains(t)&&!shortcutsButton?.contains(t))closeShortcuts();});
   shortcutsButton?.addEventListener('click',()=>{const open=shortcutsMenu?.hidden??true;closeGlobalSearch();if(shortcutsMenu)shortcutsMenu.hidden=!open;shortcutsButton.setAttribute('aria-expanded',String(open));});
   alertsButton?.addEventListener('click',async()=>{closeGlobalSearch();closeShortcuts();if(state.user?.role!=='admin'){navigate('finance');return;}await navigate('dashboard');requestAnimationFrame(()=>{const p=$('#alert-center-title')?.closest('.alert-center');if(p){p.scrollIntoView({behavior:'smooth',block:'center'});p.classList.add('alert-center-highlight');setTimeout(()=>p.classList.remove('alert-center-highlight'),1800);}});});
