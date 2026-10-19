@@ -3156,7 +3156,7 @@ app.post('/api/admin/mercadopago/conciliar/:paymentId', autenticado, somenteAdmi
     ? req.params.paymentId.trim()
     : '';
 
-  if (!/^\\d{1,30}$/.test(paymentId)) {
+  if (!/^\d{1,30}$/.test(paymentId)) {
     return erro(res, 400, 'ID de pagamento inválido.');
   }
 
