@@ -3094,6 +3094,15 @@ app.post('/api/invoices/:id/paghiper/pix', autenticado, somenteAdmin, async (req
   }
 });
 
+// Acesso GET serve apenas para diagnóstico manual. A PagHiper envia
+// notificações por POST; abrir a URL no navegador não simula um pagamento.
+app.get('/api/webhooks/paghiper', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  return res.status(405).json({
+    erro: 'Endpoint disponível. O webhook da PagHiper recebe notificações por POST.'
+  });
+});
+
 // A PagHiper envia o primeiro aviso como form-urlencoded. A confirmação é
 // consultada na API oficial antes de qualquer alteração financeira.
 app.post('/api/webhooks/paghiper', async (req, res) => {
