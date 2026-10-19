@@ -343,10 +343,23 @@ app.get('/api/dashboard', autenticado, async (req, res) => {
        WHERE status = 'active'`
     );
 
+    // Serviços ativos vendidos a clientes (não apenas itens do catálogo).
     const [[servicos]] = await db.query(
+      `SELECT COUNT(*) AS total
+       FROM contracted_services
+       WHERE status = 'active'`
+    );
+
+    const [[servicosCatalogo]] = await db.query(
       `SELECT COUNT(*) AS total
        FROM services
        WHERE active = 1`
+    );
+
+    const [[ativacoes]] = await db.query(
+      `SELECT COUNT(*) AS total
+       FROM contracted_services
+       WHERE status IN ('pending', 'provisioning')`
     );
 
     const [[usuarios]] = await db.query(
@@ -448,6 +461,8 @@ app.get('/api/dashboard', autenticado, async (req, res) => {
     return res.json({
       clientes: Number(clientes.total),
       servicos: Number(servicos.total),
+      servicosCatalogo: Number(servicosCatalogo.total),
+      ativacoesPendentes: Number(ativacoes.total),
       usuarios: Number(usuarios.total),
       faturasPendentes: Number(faturas.quantidade),
       valorPendente: Number(faturas.total),
