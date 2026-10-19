@@ -430,7 +430,7 @@ app.get('/api/dashboard', autenticado, async (req, res) => {
     }
 
     const [ultimasFaturas] = await db.query(`
-      SELECT i.id, i.description, i.amount, i.status, i.due_date,
+      SELECT i.id, i.description, i.amount, i.status, i.due_date, i.created_at,
              c.name AS client_name
       FROM invoices i
       JOIN clients c ON c.id = i.client_id
