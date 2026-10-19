@@ -237,7 +237,7 @@
         ${buttonText ? `
           <button type="button" class="btn btn-primary"
             data-action="${escapeHTML(action)}">
-            <span aria-hidden="true">+</span>
+            <span aria-hidden="true">${action === 'refresh-dashboard' ? '↻' : '+'}</span>
             ${escapeHTML(buttonText)}
           </button>
         ` : ''}
@@ -552,6 +552,9 @@
       ${pageHeader(
         'Visão geral',
         `Olá, ${state.user?.name || 'Administrador'}. Estes são os principais indicadores da operação.`
+      ,
+        'Atualizar dados',
+        'refresh-dashboard'
       )}
 
       ${alertasMarkup}
@@ -2676,6 +2679,12 @@
 
         case 'close-modal':
           closeModal();
+          break;
+
+        case 'refresh-dashboard':
+          if (state.page === 'dashboard') {
+            navigate('dashboard');
+          }
           break;
 
         case 'reload':
