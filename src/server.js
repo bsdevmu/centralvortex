@@ -3013,7 +3013,7 @@ app.post('/api/invoices/:id/mercadopago/pix', autenticado, somenteAdmin, async (
       payment_method_id: 'pix',
       external_reference: `vortexgrid-invoice-${invoice.id}`,
       notification_url: notificationUrl,
-      date_of_expiration: new Date(Date.now() + daysDue * 86400000).toISOString().replace(/\.\d{3}Z$/, '-03:00'),
+      date_of_expiration: new Date(Date.now() + daysDue * 86400000).toISOString(),
       payer: {
         email: invoice.client_email,
         first_name: String(invoice.client_name || 'Cliente').trim().split(/\s+/)[0].slice(0, 80),
