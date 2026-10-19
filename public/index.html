@@ -1,0 +1,317 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>VortexGrid Central — Painel Administrativo</title>
+
+  <meta
+    name="description"
+    content="Central administrativa VortexGrid para gestão de clientes, serviços, operações e financeiro."
+  >
+  <meta name="theme-color" content="#0b1020">
+  <meta name="color-scheme" content="light">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  >
+
+  <link rel="stylesheet" href="/style.css">
+
+  <script src="/app.js" defer></script>
+</head>
+
+<body>
+  <!-- ==========================================
+       LOGIN
+  =========================================== -->
+  <main id="login-view" class="login-page">
+    <div class="login-shell">
+
+      <header class="login-brand">
+        <a href="#" class="brand" aria-label="VortexGrid Central">
+          <span class="brand-mark" aria-hidden="true">V</span>
+
+          <span class="brand-copy">
+            <strong>VortexGrid</strong>
+            <small>Central de operações</small>
+          </span>
+        </a>
+      </header>
+
+      <section class="login-card" aria-labelledby="login-title">
+        <div class="login-heading">
+          <span class="eyebrow">
+            <span class="status-dot" aria-hidden="true"></span>
+            AMBIENTE ADMINISTRATIVO
+          </span>
+
+          <h1 id="login-title">Bem-vindo de volta.</h1>
+
+          <p class="muted">
+            Acesse sua central para gerenciar clientes, serviços,
+            operações e financeiro.
+          </p>
+        </div>
+
+        <form id="login-form">
+          <div class="form-field">
+            <label for="login-email">E-mail de acesso</label>
+
+            <input
+              id="login-email"
+              name="email"
+              type="email"
+              placeholder="admin@vortexgrid.com.br"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+              required
+            >
+          </div>
+
+          <div class="form-field">
+            <label for="login-password">Senha</label>
+
+            <input
+              id="login-password"
+              name="password"
+              type="password"
+              placeholder="Digite sua senha"
+              autocomplete="current-password"
+              required
+            >
+          </div>
+
+          <button type="submit" class="login-submit">
+            Entrar na central
+            <span aria-hidden="true">→</span>
+          </button>
+
+          <p
+            id="login-error"
+            class="message"
+            role="status"
+            aria-live="polite"
+          ></p>
+        </form>
+
+        <div class="login-security">
+          <span aria-hidden="true">◆</span>
+          Acesso restrito a usuários autorizados
+        </div>
+      </section>
+
+      <footer class="login-footer">
+        <span>© <span id="current-year">2026</span> VortexGrid</span>
+        <span>Central de gerenciamento</span>
+      </footer>
+    </div>
+  </main>
+
+  <!-- ==========================================
+       APLICAÇÃO
+  =========================================== -->
+  <div id="app-view" class="app-layout" hidden>
+
+    <!-- Navegação lateral -->
+    <aside class="sidebar" aria-label="Navegação principal">
+
+      <a href="#" class="brand" aria-label="VortexGrid Central">
+        <span class="brand-mark small" aria-hidden="true">V</span>
+
+        <span class="brand-copy">
+          <strong>VortexGrid</strong>
+          <small>Central</small>
+        </span>
+      </a>
+
+      <div class="sidebar-divider"></div>
+
+      <nav class="sidebar-nav">
+
+        <p class="nav-label">VISÃO DO NEGÓCIO</p>
+
+        <button
+          type="button"
+          class="nav-item active"
+          data-page="dashboard"
+          aria-current="page"
+        >
+          <span class="nav-icon" aria-hidden="true">⌂</span>
+          <span>Visão geral</span>
+        </button>
+
+        <p class="nav-label">GESTÃO</p>
+
+        <button
+          type="button"
+          class="nav-item"
+          data-page="clients"
+        >
+          <span class="nav-icon" aria-hidden="true">♙</span>
+          <span>Clientes</span>
+        </button>
+
+        <button
+          type="button"
+          class="nav-item"
+          data-page="orders"
+        >
+          <span class="nav-icon" aria-hidden="true">✓</span>
+          <span>Solicitações</span>
+          <span id="orders-badge" class="nav-badge" hidden></span>
+        </button>
+
+        <button
+          type="button"
+          class="nav-item"
+          data-page="services"
+        >
+          <span class="nav-icon" aria-hidden="true">▦</span>
+          <span>Serviços e contratos</span>
+        </button>
+
+        <button
+          type="button"
+          class="nav-item"
+          data-page="finance"
+        >
+          <span class="nav-icon" aria-hidden="true">↗</span>
+          <span>Financeiro</span>
+        </button>
+
+        <div id="users-nav">
+          <p class="nav-label">ADMINISTRAÇÃO</p>
+
+          <button
+            type="button"
+            class="nav-item"
+            data-page="users"
+          >
+            <span class="nav-icon" aria-hidden="true">⚙</span>
+            <span>Usuários e acessos</span>
+          </button>
+        </div>
+
+      </nav>
+
+      <div class="sidebar-spacer"></div>
+
+      <div class="sidebar-system">
+        <span class="status-dot" aria-hidden="true"></span>
+
+        <div>
+          <strong>VortexGrid Central</strong>
+          <small>Ambiente administrativo</small>
+        </div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="sidebar-user">
+          <span class="avatar" aria-hidden="true">V</span>
+
+          <div class="sidebar-user-info">
+            <strong data-user-name>Administrador</strong>
+            <small>Conta autenticada</small>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="logout account-button"
+          data-action="my-account"
+        >
+          <span aria-hidden="true">⚿</span>
+          Minha conta
+        </button>
+
+        <button
+          id="logout-button"
+          class="logout"
+          type="button"
+          data-logout
+        >
+          <span aria-hidden="true">↪</span>
+          Sair da conta
+        </button>
+      </div>
+
+    </aside>
+
+    <!-- Conteúdo principal -->
+    <main class="main-area">
+
+      <header class="topbar">
+
+        <div class="topbar-heading">
+          <p class="eyebrow">VORTEXGRID / CENTRAL</p>
+
+          <h1 id="page-title">Visão geral</h1>
+
+          <p class="topbar-description">
+            Acompanhe e gerencie as operações da sua empresa.
+          </p>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="user-chip">
+            <span class="avatar" aria-hidden="true">V</span>
+
+            <span class="user-chip-copy">
+              <strong id="user-name" data-user-name>
+                Administrador
+              </strong>
+
+              <small id="user-email" data-user-email hidden></small>
+            </span>
+          </div>
+        </div>
+
+      </header>
+
+      <div
+        id="notice"
+        class="notice"
+        role="status"
+        aria-live="polite"
+        hidden
+      ></div>
+
+      <section
+        id="page-content"
+        class="content"
+        aria-label="Conteúdo da página"
+        aria-live="polite"
+      ></section>
+
+      <footer class="app-footer">
+        <span>VortexGrid Central</span>
+        <span>Gestão integrada de operações</span>
+      </footer>
+
+    </main>
+  </div>
+
+  <!-- ==========================================
+       MODAIS
+  =========================================== -->
+  <div id="modal" hidden></div>
+
+  <script>
+    (() => {
+      const year = document.getElementById('current-year');
+
+      if (year) {
+        year.textContent = new Date().getFullYear();
+      }
+    })();
+  </script>
+</body>
+</html>

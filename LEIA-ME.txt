@@ -1,0 +1,11 @@
+VortexGrid Central — arquivos
+
+1. public/app.js
+   Substitua o arquivo public/app.js por este arquivo.
+
+2. server.js
+   MANTENHA o server.js que você acabou de enviar nesta conversa. Ele já é o backend completo e contém as rotas compatíveis usadas pelo app.js. Não o substitua por uma versão resumida ou diferente.
+
+O app.js chama as rotas presentes no server.js enviado: /api/me, /api/login, /api/logout, /api/dashboard, /api/clients, /api/clients/:id/record, /api/services, /api/service-categories, /api/contracted-services, /api/service-orders, /api/invoices e /api/users.
+
+Importante: a rota de categorias exige administrador. Fornecedores, custos e notas internas são carregados somente na área autenticada de administração; o app não os mostra no catálogo público.
