@@ -183,6 +183,10 @@
       el.textContent = name;
     });
 
+    document.querySelectorAll('.sidebar-user-info small').forEach(el => {
+      el.textContent = state.user?.role === 'admin' ? 'Administrador' : 'Operador';
+    });
+
     document.querySelectorAll(
       '[data-user-email], #user-email, .user-email'
     ).forEach(el => {
