@@ -497,25 +497,33 @@ app.get('/api/dashboard', autenticado, async (req, res) => {
 
     const [clientesRecentes] = await db.query('SELECT id, name, email, created_at FROM clients ORDER BY created_at DESC, id DESC LIMIT 5');
     const [pagamentosRecentes] = await db.query("SELECT p.id, p.amount, p.method, p.paid_at, c.name AS client_name, i.description AS invoice_description FROM payments p JOIN invoices i ON i.id = p.invoice_id JOIN clients c ON c.id = i.client_id WHERE p.paid_at IS NOT NULL ORDER BY p.paid_at DESC, p.id DESC LIMIT 5");
-    const [ativacoesRecentes] = await db.query("SELECT cs.id, cs.name, cs.status, cs.created_at, cs.updated_at, c.name AS client_name FROM contracted_services cs JOIN clients c ON c.id = cs.client_id ORDER BY COALESCE(cs.updated_at, cs.created_at) DESC, cs.id DESC LIMIT 5");
+    let ativacoesRecentes = [];
+    if (req.session.user.role === 'admin') {
+      const [rows] = await db.query("SELECT cs.id, cs.name, cs.status, cs.created_at, cs.updated_at, c.name AS client_name FROM contracted_services cs JOIN clients c ON c.id = cs.client_id ORDER BY COALESCE(cs.updated_at, cs.created_at) DESC, cs.id DESC LIMIT 5");
+      ativacoesRecentes = rows;
+    }
     const atividadeRecente = [
       ...clientesRecentes.map(item => ({ tipo: 'cliente', titulo: item.name, descricao: item.email || 'Cadastro de cliente', data: item.created_at, pagina: 'clients', ordem: item.created_at ? new Date(item.created_at).getTime() : 0 })),
       ...pagamentosRecentes.map(item => ({ tipo: 'pagamento', titulo: item.client_name, descricao: item.invoice_description || (item.method ? 'Pagamento via ' + item.method : 'Pagamento registrado'), data: item.paid_at, valor: Number(item.amount || 0), pagina: 'finance', ordem: item.paid_at ? new Date(item.paid_at).getTime() : 0 })),
       ...ultimasFaturas.map(item => ({ tipo: 'fatura', titulo: item.client_name, descricao: item.description || ('Fatura #' + item.id), data: item.created_at, valor: Number(item.amount || 0), pagina: 'finance', ordem: item.created_at ? new Date(item.created_at).getTime() : 0 })),
-      ...ativacoesRecentes.map(item => ({ tipo: 'ativacao', titulo: item.name || 'Serviço contratado', descricao: item.client_name + ' - Status: ' + item.status, data: item.updated_at || item.created_at, pagina: 'services', ordem: (item.updated_at || item.created_at) ? new Date(item.updated_at || item.created_at).getTime() : 0 })),
+      ...(req.session.user.role === 'admin' ? ativacoesRecentes.map(item => ({ tipo: 'ativacao', titulo: item.name || 'Serviço contratado', descricao: item.client_name + ' - Status: ' + item.status, data: item.updated_at || item.created_at, pagina: 'services', ordem: (item.updated_at || item.created_at) ? new Date(item.updated_at || item.created_at).getTime() : 0 })) : []),
       ...solicitacoesRecentes.map(item => ({ tipo: 'solicitacao', titulo: item.client_name, descricao: item.description_snapshot || 'Solicitação de serviço', data: item.created_at, valor: Number(item.amount_snapshot || 0), pagina: 'orders', ordem: item.created_at ? new Date(item.created_at).getTime() : 0 }))
     ].sort((a, b) => b.ordem - a.ordem).slice(0, 8).map(({ ordem, ...item }) => item);
 
     return res.json({
       clientes: Number(clientes.total),
       servicos: Number(servicos.total),
-      servicosCatalogo: Number(servicosCatalogo.total),
-      ativacoesPendentes: Number(ativacoes.total),
-      usuarios: Number(usuarios.total),
+      ...(req.session.user.role === 'admin' ? {
+        servicosCatalogo: Number(servicosCatalogo.total),
+        ativacoesPendentes: Number(ativacoes.total),
+        usuarios: Number(usuarios.total)
+      } : {}),
       faturasPendentes: Number(faturas.quantidade),
       valorPendente: Number(faturas.total),
       recebidoMes: Number(recebido.total),
-      solicitacoesPendentes: Number(solicitacoes.total),
+      ...(req.session.user.role === 'admin' ? {
+        solicitacoesPendentes: Number(solicitacoes.total)
+      } : {}),
       faturasVencidas: Number(vencidas.quantidade),
       valorVencido: Number(vencidas.total),
       recebimentosMensais,
@@ -523,7 +531,7 @@ app.get('/api/dashboard', autenticado, async (req, res) => {
         ...item,
         amount: Number(item.amount || 0)
       })),
-      solicitacoesRecentes,
+      ...(req.session.user.role === 'admin' ? { solicitacoesRecentes } : {}),
       atividadeRecente
     });
   } catch (e) {
