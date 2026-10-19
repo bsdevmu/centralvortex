@@ -467,6 +467,7 @@
     const serie = Array.isArray(data.recebimentosMensais) ? data.recebimentosMensais : [];
     const faturas = Array.isArray(data.ultimasFaturas) ? data.ultimasFaturas : [];
     const pedidos = Array.isArray(data.solicitacoesRecentes) ? data.solicitacoesRecentes : [];
+    const atividades = Array.isArray(data.atividadeRecente) ? data.atividadeRecente : [];
 
     const alertas = [];
 
@@ -616,6 +617,2103 @@
             <span><i class="financial-dot financial-dot-danger"></i>Vencido: ${escapeHTML(money(valorVencido))}</span>
           </div>
         </div>
+      </section>
+
+      <section class="content-card activity-center" aria-labelledby="activity-center-title">
+        <div class="panel-heading"><div><span class="section-eyebrow">ACOMPANHAMENTO OPERACIONAL</span><h2 id="activity-center-title">Atividade recente</h2><p>Últimos registros de clientes, pagamentos, faturas, ativações e solicitações.</p></div><span class="activity-count">${atividades.length} ${atividades.length === 1 ? 'atividade' : 'atividades'}</span></div>
+        ${atividades.length ? '<div class="activity-list">' + atividades.map(item => {
+          const labels = { cliente: 'Novo cliente', pagamento: 'Pagamento', fatura: 'Fatura', ativacao: 'Ativação', solicitacao: 'Solicitação' };
+          const symbols = { cliente: '＋', pagamento: 'R
+              <p>Pagamentos registrados nos últimos 6 meses</p>
+            </div>
+            <div class="quick-actions">
+              <button type="button" class="btn btn-small" data-action="new-invoice">+ Nova fatura</button>
+              <button type="button" class="btn btn-small" data-action="new-client">+ Novo cliente</button>
+            </div>
+          </div>
+          ${monthlyChart(serie)}
+        </article>
+
+        <article class="content-card">
+          <div class="panel-heading">
+            <div>
+              <h2>Operação</h2>
+              <p>Cadastros e serviços da operação</p>
+            </div>
+            ${isAdmin ? '<button type="button" class="btn btn-small" data-page="services">Gerenciar serviços</button>' : ''}
+          </div>
+          <div class="mini-stats">
+            <div><strong>${clientes.toLocaleString('pt-BR')}</strong><span>Clientes ativos</span></div>
+            <div><strong>${servicos.toLocaleString('pt-BR')}</strong><span>Serviços contratados ativos</span></div>
+            ${isAdmin ? `<div><strong>${servicosCatalogo.toLocaleString('pt-BR')}</strong><span>Itens ativos no catálogo</span></div>` : ''}
+            ${isAdmin ? `<div><strong>${Number(data.usuarios ?? 0).toLocaleString('pt-BR')}</strong><span>Usuários ativos</span></div>` : ''}
+          </div>
+        </article>
+      </section>
+
+      <section class="dashboard-grid dashboard-grid-secondary">
+        <article class="content-card">
+          <div class="panel-heading">
+            <div>
+              <h2>Últimas faturas</h2>
+              <p>As cinco faturas mais recentes</p>
+            </div>
+            <button type="button" class="btn btn-small" data-page="finance">Ver todas</button>
+          </div>
+          ${faturas.length ? `
+            <div class="list-rows">
+              ${faturas.map(item => `
+                <div class="list-row">
+                  <div class="list-row-main">
+                    <strong>${escapeHTML(item.client_name)}</strong>
+                    <small>${escapeHTML(item.description || '—')} · vence em ${date(item.due_date)}</small>
+                  </div>
+                  <div class="list-row-side">
+                    <strong>${escapeHTML(money(item.amount))}</strong>
+                    ${statusLabel(item.status)}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<div class="empty-state">Nenhuma fatura emitida ainda.</div>'}
+        </article>
+
+        <article class="content-card">
+          <div class="panel-heading">
+            <div>
+              <h2>${isAdmin ? 'Solicitações aguardando análise' : 'Acesso rápido'}</h2>
+              <p>${isAdmin ? 'Pedidos recentes feitos pelos clientes' : 'Principais áreas do painel'}</p>
+            </div>
+            ${isAdmin ? '<button type="button" class="btn btn-small" data-page="orders">Ver todas</button>' : ''}
+          </div>
+          ${isAdmin ? (pedidos.length ? `
+            <div class="list-rows">
+              ${pedidos.map(item => `
+                <div class="list-row">
+                  <div class="list-row-main">
+                    <strong>${escapeHTML(item.client_name)}</strong>
+                    <small>${escapeHTML(item.description_snapshot || '—')} · ${escapeHTML(cycleLabel(item.billing_cycle_snapshot))} · ${date(item.created_at)}</small>
+                  </div>
+                  <div class="list-row-side">
+                    <strong>${escapeHTML(money(item.amount_snapshot))}</strong>
+                    <button type="button" class="btn btn-small btn-primary" data-action="review-order" data-id="${escapeHTML(item.id)}">Analisar</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<div class="empty-state">Nenhuma solicitação pendente. Tudo em dia.</div>') : `
+            <div class="quick-link-list">
+              <button type="button" class="quick-link" data-page="clients">
+                <span class="quick-link-icon">♙</span><span><strong>Clientes</strong><small>Consulte e cadastre clientes</small></span><span class="quick-link-arrow">›</span>
+              </button>
+              <button type="button" class="quick-link" data-page="finance">
+                <span class="quick-link-icon">▤</span><span><strong>Financeiro</strong><small>Faturas, vencimentos e pagamentos</small></span><span class="quick-link-arrow">›</span>
+              </button>
+            </div>
+          `}
+        </article>
+      </section>
+    `;
+  }
+
+  // --------------------------------------------------
+  // CLIENTES
+  // --------------------------------------------------
+
+  async function renderClients() {
+    const result = await api('/api/clients');
+    state.cache.clients = getArray(result, 'clients');
+
+    const term = state.clientSearch.trim().toLocaleLowerCase('pt-BR');
+    const filtered = state.cache.clients.filter(client => {
+      const searchable = [client.name, client.email, client.phone, client.document]
+        .join(' ').toLocaleLowerCase('pt-BR');
+      const matchesText = !term || searchable.includes(term);
+      const matchesStatus = state.clientStatus === 'all' ||
+        (client.status || 'active') === state.clientStatus;
+      return matchesText && matchesStatus;
+    });
+
+    content.innerHTML = `
+      ${pageHeader('Clientes',
+        'Cadastre, pesquise e gerencie os clientes da VortexGrid.',
+        'Novo cliente', 'new-client')}
+
+      <section class="content-card" style="margin-bottom:18px">
+        <div class="form-grid" style="align-items:end">
+          <label class="form-field">
+            <span>Pesquisar cliente</span>
+            <input id="client-search" type="search"
+              placeholder="Nome, e-mail, telefone ou CPF/CNPJ"
+              value="${escapeHTML(state.clientSearch)}">
+          </label>
+          <label class="form-field">
+            <span>Status do cadastro</span>
+            <select id="client-status-filter">
+              <option value="all" ${state.clientStatus === 'all' ? 'selected' : ''}>Todos</option>
+              <option value="active" ${state.clientStatus === 'active' ? 'selected' : ''}>Ativos</option>
+              <option value="inactive" ${state.clientStatus === 'inactive' ? 'selected' : ''}>Inativos</option>
+            </select>
+          </label>
+        </div>
+        <p class="summary-footer">${filtered.length} cliente(s) exibido(s). A lista consulta até 500 registros.</p>
+      </section>
+
+      ${table(['Cliente', 'E-mail', 'Telefone', 'CPF / CNPJ', 'Status', 'Cadastro', 'Ações'],
+        filtered.map(client => clientTableRow(client)))}
+    `;
+
+    const search = $('#client-search', content);
+    const statusFilter = $('#client-status-filter', content);
+
+    if (search) {
+      search.addEventListener('input', () => {
+        const position = search.selectionStart;
+        state.clientSearch = search.value;
+        filterClientTable();
+        const newSearch = $('#client-search', content);
+        if (newSearch) {
+          newSearch.focus();
+          newSearch.setSelectionRange(position, position);
+        }
+      });
+    }
+
+    if (statusFilter) {
+      statusFilter.addEventListener('change', () => {
+        state.clientStatus = statusFilter.value;
+        renderClients();
+      });
+    }
+  }
+
+  function clientTableRow(client) {
+    const id = escapeHTML(client.id);
+    const inactive = client.status === 'inactive';
+
+    return [
+      `<strong>${escapeHTML(client.name)}</strong>`,
+      escapeHTML(client.email || '—'),
+      escapeHTML(client.phone || '—'),
+      escapeHTML(client.document || '—'),
+      statusLabel(client.status || 'active'),
+      date(client.created_at),
+      `<div class="quick-actions">
+        <button type="button" class="btn btn-small" data-action="client-record" data-id="${id}">Ficha</button>
+        <button type="button" class="btn btn-small" data-action="edit-client" data-id="${id}">Editar</button>
+        <button type="button" class="btn btn-small" data-action="toggle-client" data-id="${id}" data-status="${inactive ? 'active' : 'inactive'}">${inactive ? 'Ativar' : 'Inativar'}</button>
+      </div>`
+    ];
+  }
+
+  function filterClientTable() {
+    const term = state.clientSearch.trim().toLocaleLowerCase('pt-BR');
+    const filtered = state.cache.clients.filter(client => {
+      const searchable = [client.name, client.email, client.phone, client.document]
+        .join(' ').toLocaleLowerCase('pt-BR');
+      const matchesText = !term || searchable.includes(term);
+      const matchesStatus = state.clientStatus === 'all' ||
+        (client.status || 'active') === state.clientStatus;
+      return matchesText && matchesStatus;
+    });
+
+    const wrapper = content.querySelector('.table-wrapper');
+    const empty = content.querySelector('.empty-state');
+    const tableHTML = table(
+      ['Cliente', 'E-mail', 'Telefone', 'CPF / CNPJ', 'Status', 'Cadastro', 'Ações'],
+      filtered.map(client => clientTableRow(client))
+    );
+
+    const oldTable = wrapper || empty;
+    if (oldTable) oldTable.outerHTML = tableHTML;
+
+    const summary = content.querySelector('.summary-footer');
+    if (summary) {
+      summary.textContent = `${filtered.length} cliente(s) exibido(s). A lista consulta até 500 registros.`;
+    }
+  }
+
+  // --------------------------------------------------
+  // FICHA DO CLIENTE
+  // --------------------------------------------------
+
+  async function openClientRecord(id) {
+    if (!id || !Number.isInteger(Number(id)) || Number(id) < 1) {
+      notify('Identificador de cliente inválido.', true);
+      return;
+    }
+
+    state.currentClientId = Number(id);
+    state.page = 'client-record';
+
+    document.querySelectorAll('[data-page]').forEach(el => {
+      el.classList.toggle('active', el.dataset.page === 'clients');
+    });
+
+    const pageTitle = $('#page-title');
+    if (pageTitle) pageTitle.textContent = 'Ficha do cliente';
+
+    setLoading('Carregando ficha do cliente...');
+
+    try {
+      const record = await api(`/api/clients/${encodeURIComponent(id)}/record`);
+      renderClientRecord(record);
+    } catch (error) {
+      content.innerHTML = `
+        <div class="error-state">
+          <h2>Não foi possível carregar a ficha</h2>
+          <p>${escapeHTML(error.message)}</p>
+          <div class="quick-actions">
+            <button type="button" class="btn" data-action="clients-back">Voltar aos clientes</button>
+            <button type="button" class="btn btn-primary" data-action="client-record" data-id="${escapeHTML(id)}">Tentar novamente</button>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  function contractedServiceAction(service) {
+    const status = String(service.status || 'pending');
+
+    if (state.user?.role !== 'admin') return '—';
+
+    if (status === 'cancelled') {
+      return '<span class="summary-footer">Status final</span>';
+    }
+
+    return `
+      <button type="button" class="btn btn-small btn-primary"
+        data-action="change-contracted-service-status"
+        data-id="${escapeHTML(service.id)}"
+        data-status="${escapeHTML(status)}"
+        data-name="${escapeHTML(service.name || 'Serviço')}">
+        Alterar status
+      </button>
+    `;
+  }
+
+  function renderClientRecord(record) {
+    const client = record?.cliente;
+    const financial = record?.financeiro || {};
+    const invoices = Array.isArray(record?.faturas) ? record.faturas : [];
+    const payments = Array.isArray(record?.pagamentos) ? record.pagamentos : [];
+    const contractedServices = Array.isArray(record?.servicosContratados)
+      ? record.servicosContratados
+      : [];
+
+    if (!client) {
+      throw new Error('Os dados do cliente não foram retornados pela API.');
+    }
+
+    state.currentClientId = Number(client.id);
+    state.page = 'client-record';
+
+    const pageTitle = $('#page-title');
+    if (pageTitle) pageTitle.textContent = 'Ficha do cliente';
+
+    const documentNumber = client.document || 'Não informado';
+    const notes = client.notes || '';
+    const clientStatus = client.status || 'active';
+
+    content.innerHTML = `
+      <div class="page-header">
+        <div>
+          <h1>Ficha do cliente</h1>
+          <p>Cadastro, serviços contratados, situação financeira e histórico de movimentações.</p>
+        </div>
+        <div class="quick-actions">
+          <button type="button" class="btn" data-action="clients-back">← Voltar</button>
+          <button type="button" class="btn btn-primary" data-action="edit-client" data-id="${escapeHTML(client.id)}">Editar cadastro</button>
+          <button type="button" class="btn" data-action="refresh-client-record" data-id="${escapeHTML(client.id)}">Atualizar ficha</button>
+        </div>
+      </div>
+
+      <section class="content-card client-record-profile" style="margin-bottom:18px">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">CADASTRO DO CLIENTE</span>
+            <h2>${escapeHTML(client.name || 'Cliente sem nome')}</h2>
+            <p>Identificador #${escapeHTML(client.id)}</p>
+          </div>
+          ${statusLabel(clientStatus)}
+        </div>
+        <div class="form-grid">
+          <div class="form-field"><span>E-mail</span><div>${escapeHTML(client.email || 'Não informado')}</div></div>
+          <div class="form-field"><span>Telefone</span><div>${escapeHTML(client.phone || 'Não informado')}</div></div>
+          <div class="form-field"><span>CPF / CNPJ</span><div>${escapeHTML(documentNumber)}</div></div>
+          <div class="form-field"><span>Data de cadastro</span><div>${date(client.created_at)}</div></div>
+          <div class="form-field" style="grid-column:1/-1">
+            <span>Observações</span>
+            <div style="white-space:pre-wrap">${escapeHTML(notes || 'Nenhuma observação cadastrada.')}</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-card" style="margin-bottom:18px">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">CONTRATOS E SERVIÇOS</span>
+            <h2>Serviços do cliente</h2>
+            <p>Serviços vinculados a este cadastro e suas situações atuais.</p>
+          </div>
+          ${state.user?.role === 'admin' && clientStatus === 'active' ? `
+            <button type="button" class="btn btn-primary" data-action="add-contracted-service" data-id="${escapeHTML(client.id)}">+ Adicionar serviço</button>
+          ` : ''}
+        </div>
+
+        ${contractedServices.length ? table(
+          ['Serviço', 'Categoria', 'Valor', 'Cobrança', 'Status', 'Próximo vencimento', 'Vinculado em', 'Ação'],
+          contractedServices.map(service => [
+            `<strong>${escapeHTML(service.name || 'Serviço')}</strong>${service.description ? `<div class="summary-footer">${escapeHTML(service.description)}</div>` : ''}`,
+            escapeHTML(service.service_category || '—'),
+            money(service.sale_price),
+            escapeHTML({
+              one_time: 'Única',
+              monthly: 'Mensal',
+              yearly: 'Anual'
+            }[service.billing_cycle] || service.billing_cycle || '—'),
+            statusLabel(service.status),
+            date(service.next_due_date),
+            date(service.created_at),
+            contractedServiceAction(service)
+          ])
+        ) : `
+          <div class="empty-state">
+            <p>Este cliente ainda não possui serviços vinculados.</p>
+            ${state.user?.role === 'admin' && clientStatus === 'active' ? `
+              <p>Clique em <strong>Adicionar serviço</strong> para selecionar um item do catálogo da VortexGrid.</p>
+            ` : ''}
+          </div>
+        `}
+      </section>
+
+      <section class="stats-grid client-record-stats">
+        ${statCard('Total faturado', money(financial.totalInvoiced), `${Number(financial.invoiceCount || 0)} fatura(s) no histórico`, 'R$')}
+        ${statCard('Em aberto', money(financial.totalOpen), `${Number(financial.pendingCount || 0)} pendente(s) e ${Number(financial.overdueCount || 0)} vencida(s)`, '▤')}
+        ${statCard('Valor vencido', money(financial.totalOverdue), `${Number(financial.overdueCount || 0)} fatura(s) vencida(s)`, '!')}
+        ${statCard('Faturas pagas', money(financial.totalPaidInvoices), `${Number(financial.paidCount || 0)} fatura(s) paga(s)`, '✓')}
+        ${statCard('Pagamentos registrados', money(financial.totalPayments), `${payments.length} pagamento(s) registrado(s)`, '↗')}
+      </section>
+
+      <section class="content-card" style="margin-top:18px">
+        <div class="panel-heading">
+          <div><h2>Histórico de faturas</h2><p>Faturas vinculadas a este cliente.</p></div>
+          <button type="button" class="btn btn-primary" data-action="new-invoice-for-client" data-id="${escapeHTML(client.id)}">+ Nova fatura</button>
+        </div>
+        ${table(
+          ['ID', 'Descrição', 'Valor', 'Vencimento', 'Status', 'Criada em', 'Ação'],
+          invoices.map(invoice => [
+            `#${escapeHTML(invoice.id)}`,
+            escapeHTML(invoice.description || 'Fatura'),
+            money(invoice.amount),
+            date(invoice.due_date),
+            statusLabel(invoice.status),
+            date(invoice.created_at),
+            invoice.status !== 'paid' && invoice.status !== 'cancelled' ? `
+              <button type="button" class="btn btn-small" data-action="pay-invoice-from-record" data-id="${escapeHTML(invoice.id)}">Registrar pagamento</button>
+            ` : '—'
+          ])
+        )}
+      </section>
+
+      <section class="content-card" style="margin-top:18px">
+        <div class="panel-heading">
+          <div><h2>Histórico de pagamentos</h2><p>Pagamentos registrados nas faturas deste cliente.</p></div>
+        </div>
+        ${table(
+          ['ID da fatura', 'Valor', 'Método', 'Referência', 'Data do pagamento'],
+          payments.map(payment => [
+            `#${escapeHTML(payment.invoice_id)}`,
+            money(payment.amount),
+            escapeHTML(payment.method || 'Não informado'),
+            escapeHTML(payment.reference || '—'),
+            dateTime(payment.paid_at)
+          ])
+        )}
+      </section>
+
+      <div class="quick-actions" style="margin-top:18px">
+        <button type="button" class="btn" data-action="clients-back">← Voltar à lista de clientes</button>
+        <button type="button" class="btn btn-primary" data-action="edit-client" data-id="${escapeHTML(client.id)}">Editar cadastro</button>
+      </div>
+    `;
+  }
+
+  // --------------------------------------------------
+  // STATUS DO SERVIÇO CONTRATADO
+  // --------------------------------------------------
+
+  function changeContractedServiceStatus(serviceId, currentStatus, serviceName) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem alterar o status de serviços.', true);
+      return;
+    }
+
+    const id = Number(serviceId);
+
+    if (!Number.isSafeInteger(id) || id < 1) {
+      notify('Identificador de serviço inválido.', true);
+      return;
+    }
+
+    if (currentStatus === 'cancelled') {
+      notify('Um serviço cancelado não pode ser reativado por esta tela.', true);
+      return;
+    }
+
+    const statusOptions = [
+      { value: 'pending', label: 'Pendente' },
+      { value: 'provisioning', label: 'Em provisionamento' },
+      { value: 'active', label: 'Ativo' },
+      { value: 'suspended', label: 'Suspenso' },
+      { value: 'cancelled', label: 'Cancelado' }
+    ];
+
+    openModal(
+      `Alterar status — ${serviceName || 'Serviço'}`,
+      `
+        <p class="summary-footer" style="margin-bottom:14px">
+          Selecione o novo status para este serviço contratado.
+          Essa alteração não gera faturas automaticamente.
+        </p>
+        ${field('Status atual', 'current_status', 'text', true, [
+          {
+            value: currentStatus,
+            label: ({
+              pending: 'Pendente',
+              provisioning: 'Em provisionamento',
+              active: 'Ativo',
+              suspended: 'Suspenso'
+            }[currentStatus] || currentStatus)
+          }
+        ], currentStatus)}
+        ${field('Novo status', 'status', 'text', true, statusOptions, currentStatus)}
+        <p class="summary-footer">
+          Atenção: cancelar um serviço é uma ação final e não poderá ser desfeita por esta tela.
+        </p>
+      `,
+      async values => {
+        const newStatus = values.status;
+
+        if (!statusOptions.some(option => option.value === newStatus)) {
+          throw new Error('Selecione um status válido.');
+        }
+
+        if (newStatus === currentStatus) {
+          throw new Error('Selecione um status diferente do atual.');
+        }
+
+        if (newStatus === 'cancelled' && !confirm(
+          `Confirma o cancelamento do serviço "${serviceName || 'Serviço'}"?\n\n` +
+          'O serviço permanecerá registrado no histórico e não poderá ser reativado por esta tela.'
+        )) {
+          throw new Error('Cancelamento não confirmado.');
+        }
+
+        return api(`/api/contracted-services/${encodeURIComponent(id)}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: newStatus })
+        });
+      }
+    );
+  }
+
+  // --------------------------------------------------
+  // VINCULAR SERVIÇO A CLIENTE
+  // --------------------------------------------------
+
+  async function addContractedService(clientId) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem vincular serviços a clientes.', true);
+      return;
+    }
+
+    const id = Number(clientId);
+    if (!Number.isSafeInteger(id) || id < 1) {
+      notify('Identificador de cliente inválido.', true);
+      return;
+    }
+
+    try {
+      const client = state.cache.clients.find(item => String(item.id) === String(id));
+
+      if (client && client.status === 'inactive') {
+        notify('Não é possível vincular serviços a um cliente inativo.', true);
+        return;
+      }
+
+      const result = await api('/api/services');
+      const allServices = getArray(result, 'services');
+      const services = allServices.filter(isActive);
+
+      state.cache.services = allServices;
+
+      if (!services.length) {
+        notify('Não há serviços ativos no catálogo. Cadastre um serviço antes de vinculá-lo.', true);
+        return;
+      }
+
+      const options = [
+        { value: '', label: 'Selecione um serviço...' },
+        ...services.map(service => ({
+          value: service.id,
+          label: `${service.name} — ${money(service.price)} / ` +
+            ({
+              one_time: 'cobrança única',
+              monthly: 'mês',
+              yearly: 'ano'
+            }[service.billing_cycle] || service.billing_cycle || 'cobrança')
+        }))
+      ];
+
+      openModal(
+        'Adicionar serviço ao cliente',
+        `<p class="summary-footer" style="margin-bottom:14px">
+          O serviço será vinculado ao cliente com status Pendente.
+          O preço e o ciclo de cobrança serão copiados do catálogo.
+          Esta ação não gera uma fatura automaticamente.
+        </p>${field('Serviço do catálogo', 'service_id', 'text', true, options, '')}`,
+        values => {
+          const serviceId = Number(values.service_id);
+
+          if (!Number.isSafeInteger(serviceId) || serviceId < 1) {
+            throw new Error('Selecione um serviço válido.');
+          }
+
+          return api(`/api/clients/${encodeURIComponent(id)}/contracted-services`, {
+            method: 'POST',
+            body: JSON.stringify({ service_id: serviceId })
+          });
+        }
+      );
+    } catch (error) {
+      notify(error.message || 'Não foi possível carregar o catálogo de serviços.', true);
+    }
+  }
+
+  // --------------------------------------------------
+  // EDITAR CLIENTE
+  // --------------------------------------------------
+
+  function editClient(id) {
+    const client = state.cache.clients.find(item => String(item.id) === String(id));
+
+    if (!client) {
+      notify('Cliente não encontrado na lista atual. Atualize a tela.', true);
+      return;
+    }
+
+    openModal('Editar cliente', [
+      field('Nome completo / empresa', 'name', 'text', true, null, client.name),
+      field('E-mail', 'email', 'email', false, null, client.email || ''),
+      field('Telefone', 'phone', 'tel', false, null, client.phone || ''),
+      field('CPF / CNPJ', 'document', 'text', false, null, client.document || ''),
+      field('Observações', 'notes', 'textarea', false, null, client.notes || '')
+    ].join(''), values => api(`/api/clients/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(values)
+    }));
+  }
+
+  async function toggleClient(id, status) {
+    const client = state.cache.clients.find(item => String(item.id) === String(id));
+
+    if (!client) {
+      notify('Cliente não encontrado na lista atual.', true);
+      return;
+    }
+
+    const action = status === 'inactive' ? 'inativar' : 'ativar';
+
+    if (!confirm(
+      `Deseja ${action} o cadastro de "${client.name}"?\n\n` +
+      'O registro e o histórico financeiro serão preservados.'
+    )) return;
+
+    try {
+      await api(`/api/clients/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+
+      notify(status === 'inactive' ? 'Cliente inativado.' : 'Cliente ativado.');
+
+      if (state.page === 'client-record' &&
+          String(state.currentClientId) === String(id)) {
+        await openClientRecord(id);
+      } else {
+        await navigate('clients');
+      }
+    } catch (error) {
+      notify(error.message, true);
+    }
+  }
+
+  // --------------------------------------------------
+  // SERVIÇOS — CATÁLOGO
+  // --------------------------------------------------
+
+  async function renderServices() {
+    const [servicesResult, categoriesResult] = await Promise.all([
+      api('/api/services'),
+      state.user?.role === 'admin'
+        ? api('/api/service-categories')
+        : Promise.resolve([])
+    ]);
+
+    const services = getArray(servicesResult, 'services');
+    const categories = getArray(categoriesResult, 'categories').length
+      ? getArray(categoriesResult, 'categories')
+      : getArray(categoriesResult, 'items').length
+        ? getArray(categoriesResult, 'items')
+        : Array.isArray(categoriesResult) ? categoriesResult : [];
+
+    state.cache.services = services;
+    state.cache.categories = categories;
+
+    content.innerHTML = `
+      ${pageHeader(
+        'Serviços',
+        'Catálogo de serviços comercializados pela VortexGrid.',
+        state.user?.role === 'admin' ? 'Novo serviço' : '',
+        'new-service'
+      )}
+
+      ${state.user?.role === 'admin' ? `
+        <section class="content-card" style="margin-bottom:18px">
+          <div class="panel-heading">
+            <div>
+              <h2>Categorias do catálogo</h2>
+              <p>Organize os serviços por categoria e mantenha as opções de cadastro atualizadas.</p>
+            </div>
+            <button type="button" class="btn"
+              data-action="manage-categories">Gerenciar categorias</button>
+          </div>
+          <p class="summary-footer">
+            ${categories.length} categoria(s) cadastrada(s).
+          </p>
+        </section>
+      ` : ''}
+
+      ${table(
+        [
+          'Serviço',
+          'Categoria',
+          'Preço',
+          'Cobrança',
+          'Vitrine principal',
+          'Status',
+          ...(state.user?.role === 'admin' ? ['Ações'] : [])
+        ],
+        services.map(service => {
+          const active = isActive(service);
+
+          return [
+            `<strong>${escapeHTML(service.name)}</strong>`,
+            escapeHTML(
+              service.parent_category_name && service.linked_category_name
+                ? `${service.parent_category_name} → ${service.linked_category_name}`
+                : service.linked_category_name || service.category || '—'
+            ),
+            money(service.price),
+            escapeHTML({
+              one_time: 'Única',
+              monthly: 'Mensal',
+              yearly: 'Anual'
+            }[service.billing_cycle] || service.billing_cycle || '—'),
+            featuredLabel(service),
+            statusLabel(active ? 'active' : 'inactive'),
+            ...(state.user?.role === 'admin' ? [
+              `<div class="quick-actions" style="gap:6px;flex-wrap:wrap">
+                <button type="button" class="btn btn-small"
+                  data-action="edit-service"
+                  data-id="${escapeHTML(service.id)}">Editar</button>
+                <button type="button"
+                  class="btn btn-small ${active ? '' : 'btn-primary'}"
+                  data-action="toggle-service"
+                  data-id="${escapeHTML(service.id)}"
+                  data-status="${active ? 'inactive' : 'active'}"
+                  data-name="${escapeHTML(service.name || 'serviço')}">
+                  ${active ? 'Inativar' : 'Ativar'}
+                </button>
+              </div>`
+            ] : [])
+          ];
+        })
+      )}
+    `;
+  }
+
+  async function toggleService(id, status, name) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem alterar o status dos serviços.', true);
+      return;
+    }
+
+    const serviceId = Number(id);
+
+    if (!Number.isSafeInteger(serviceId) || serviceId < 1) {
+      notify('Identificador de serviço inválido.', true);
+      return;
+    }
+
+    const activating = status === 'active';
+
+    if (!['active', 'inactive'].includes(status)) {
+      notify('Status de serviço inválido.', true);
+      return;
+    }
+
+    const action = activating ? 'ativar' : 'inativar';
+
+    if (!confirm(
+      `Deseja ${action} o serviço "${name || 'serviço'}"?\n\n` +
+      (activating
+        ? 'O serviço poderá ficar disponível para contratação, conforme as regras do catálogo.'
+        : 'O serviço deixará de estar disponível para novas contratações. Os registros existentes serão preservados.')
+    )) {
+      return;
+    }
+
+    try {
+      await api(`/api/services/${encodeURIComponent(serviceId)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active: activating })
+      });
+
+      notify(activating ? 'Serviço ativado.' : 'Serviço inativado.');
+      await navigate('services');
+    } catch (error) {
+      notify(error.message || 'Não foi possível alterar o status do serviço.', true);
+    }
+  }
+
+  // --------------------------------------------------
+  // CATEGORIAS DE SERVIÇOS
+  // --------------------------------------------------
+
+  async function renderCategories() {
+    if (state.user?.role !== 'admin') {
+      throw new Error('Apenas administradores podem gerenciar categorias.');
+    }
+
+    const result = await api('/api/service-categories');
+
+    const categories = Array.isArray(result)
+      ? result
+      : getArray(result, 'categories').length
+        ? getArray(result, 'categories')
+        : getArray(result, 'items');
+
+    state.cache.categories = categories;
+
+    content.innerHTML = `
+      <div class="page-header">
+        <div>
+          <h1>Categorias de serviços</h1>
+          <p>Cadastre e organize as categorias utilizadas no catálogo da VortexGrid.</p>
+        </div>
+        <div class="quick-actions">
+          <button type="button" class="btn"
+            data-action="back-to-services">← Voltar aos serviços</button>
+          <button type="button" class="btn btn-primary"
+            data-action="new-category">+ Nova categoria</button>
+        </div>
+      </div>
+
+      <section class="content-card" style="margin-bottom:18px">
+        <div class="panel-heading">
+          <div>
+            <h2>Catálogo de categorias</h2>
+            <p>As categorias ativas ficam disponíveis no cadastro de novos serviços.</p>
+          </div>
+        </div>
+        ${table(
+          ['Categoria / hierarquia', 'Identificador', 'Ordem', 'Status', 'Ações'],
+          categories.map(category => {
+            const active = isActive(category);
+            return [
+              `${category.parent_id ? '<span style="color:var(--muted,#8b95a7);padding-left:14px">↳ </span>' : ''}<strong>${escapeHTML(category.name || 'Sem nome')}</strong>${category.parent_name ? `<div class="summary-footer">Subcategoria de ${escapeHTML(category.parent_name)}</div>` : ''}`,
+              escapeHTML(category.slug || '—'),
+              escapeHTML(category.sort_order ?? 0),
+              statusLabel(active ? 'active' : 'inactive'),
+              `<div class="quick-actions" style="gap:6px;flex-wrap:wrap">
+                <button type="button" class="btn btn-small"
+                  data-action="edit-category"
+                  data-id="${escapeHTML(category.id)}">Editar</button>
+                <button type="button" class="btn btn-small"
+                  data-action="toggle-category"
+                  data-id="${escapeHTML(category.id)}"
+                  data-status="${active ? 'inactive' : 'active'}"
+                  data-name="${escapeHTML(category.name || 'categoria')}">
+                  ${active ? 'Inativar' : 'Ativar'}
+                </button>
+                <button type="button" class="btn btn-small"
+                  data-action="delete-category"
+                  data-id="${escapeHTML(category.id)}"
+                  data-name="${escapeHTML(category.name || 'categoria')}">Excluir</button>
+              </div>`
+            ];
+          })
+        )}
+      </section>
+
+      <p class="summary-footer">
+        ${categories.length} categoria(s) cadastrada(s). Inativar uma categoria não exclui os serviços já cadastrados nela.
+      </p>
+    `;
+  }
+
+  async function createCategory() {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem cadastrar categorias.', true);
+      return;
+    }
+
+    const mainCategories = state.cache.categories.filter(category =>
+      isActive(category) && !category.parent_id
+    );
+    const parentOptions = [
+      { value: '', label: 'Categoria principal (sem categoria superior)' },
+      ...mainCategories.map(category => ({ value: String(category.id), label: category.name }))
+    ];
+
+    openModal(
+      'Nova categoria ou subcategoria',
+      `
+        ${field('Nome da categoria', 'name', 'text', true)}
+        ${field('Categoria principal', 'parent_id', 'text', false, parentOptions, '')}
+        <p class="summary-footer">
+          Deixe como categoria principal ou selecione uma categoria para criar uma subcategoria. São permitidos apenas dois níveis.
+        </p>
+      `,
+      async values => {
+        const name = String(values.name || '').trim();
+
+        if (!name) {
+          throw new Error('Informe o nome da categoria.');
+        }
+
+        if (name.length > 80) {
+          throw new Error('O nome da categoria deve ter no máximo 80 caracteres.');
+        }
+
+        await api('/api/service-categories', {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            parent_id: values.parent_id ? Number(values.parent_id) : null
+          })
+        });
+
+        state.cache.categories = [];
+      }
+    );
+  }
+
+  async function editCategory(id) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem editar categorias.', true);
+      return;
+    }
+
+    const category = state.cache.categories.find(item => String(item.id) === String(id));
+    if (!category) {
+      notify('Categoria não encontrada. Atualize a lista e tente novamente.', true);
+      return;
+    }
+
+    const parentOptions = [
+      { value: '', label: 'Categoria principal (sem categoria superior)' },
+      ...state.cache.categories
+        .filter(item => !item.parent_id && String(item.id) !== String(category.id) && isActive(item))
+        .map(item => ({ value: String(item.id), label: item.name }))
+    ];
+
+    openModal('Editar categoria ou subcategoria', [
+      field('Nome da categoria', 'name', 'text', true, null, category.name || ''),
+      field('Categoria principal', 'parent_id', 'text', false, parentOptions, category.parent_id ? String(category.parent_id) : '')
+    ].join(''), async values => {
+      const name = String(values.name || '').trim();
+      if (!name) throw new Error('Informe o nome da categoria.');
+      if (name.length > 80) throw new Error('O nome deve ter no máximo 80 caracteres.');
+      const parentId = values.parent_id ? Number(values.parent_id) : null;
+      if (parentId && (String(parentId) === String(category.id) || state.cache.categories.some(item => String(item.id) === String(parentId) && item.parent_id))) {
+        throw new Error('Escolha uma categoria principal válida. Não é permitido criar níveis adicionais.');
+      }
+      await api(`/api/service-categories/${encodeURIComponent(category.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name, parent_id: parentId })
+      });
+      state.cache.categories = [];
+    });
+  }
+
+  async function deleteCategory(id, name) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem excluir categorias.', true);
+      return;
+    }
+
+    const categoryId = Number(id);
+    if (!Number.isSafeInteger(categoryId) || categoryId < 1) {
+      notify('Identificador de categoria inválido.', true);
+      return;
+    }
+
+    if (!confirm(`Deseja excluir definitivamente a categoria "${name || 'categoria'}"?\n\nA exclusão será bloqueada se houver serviços ou subcategorias vinculados.`)) return;
+
+    try {
+      await api(`/api/service-categories/${encodeURIComponent(categoryId)}`, {
+        method: 'DELETE'
+      });
+      state.cache.categories = [];
+      notify('Categoria excluída.');
+      await navigate('categories');
+    } catch (error) {
+      notify(error.message || 'Não foi possível excluir a categoria.', true);
+    }
+  }
+
+  async function toggleCategory(id, status, name) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem alterar categorias.', true);
+      return;
+    }
+
+    const categoryId = Number(id);
+
+    if (!Number.isSafeInteger(categoryId) || categoryId < 1) {
+      notify('Identificador de categoria inválido.', true);
+      return;
+    }
+
+    const activating = status === 'active';
+
+    if (!confirm(
+      `Deseja ${activating ? 'ativar' : 'inativar'} a categoria "${name || 'categoria'}"?\n\n` +
+      (activating
+        ? 'Ela ficará disponível para novos serviços.'
+        : 'Ela deixará de aparecer nas opções de novos serviços. Os serviços existentes serão preservados.')
+    )) return;
+
+    try {
+      await api(`/api/service-categories/${encodeURIComponent(categoryId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active: activating })
+      });
+
+      notify(activating ? 'Categoria ativada.' : 'Categoria inativada.');
+      await navigate('categories');
+    } catch (error) {
+      notify(error.message || 'Não foi possível atualizar a categoria.', true);
+    }
+  }
+
+  // --------------------------------------------------
+  // FINANCEIRO
+  // --------------------------------------------------
+
+  async function renderFinance() {
+    // Garante que o status "vencido" esteja atualizado antes de listar.
+    await api('/api/invoices/refresh-overdue', { method: 'POST' }).catch(() => {});
+
+    const [clientsResult, invoicesResult] = await Promise.all([
+      api('/api/clients'),
+      api('/api/invoices')
+    ]);
+
+    state.cache.clients = getArray(clientsResult, 'clients');
+    state.cache.invoices = getArray(invoicesResult, 'invoices');
+
+    drawFinance();
+  }
+
+  function filteredInvoices() {
+    const term = state.financeSearch.trim().toLocaleLowerCase('pt-BR');
+
+    return state.cache.invoices.filter(invoice => {
+      const matchesStatus = state.financeStatus === 'all' ||
+        invoice.status === state.financeStatus;
+
+      const searchable = [
+        invoice.client_name,
+        invoice.description,
+        invoice.id
+      ].join(' ').toLocaleLowerCase('pt-BR');
+
+      return matchesStatus && (!term || searchable.includes(term));
+    });
+  }
+
+  function invoiceRow(invoice) {
+    const open = invoice.status === 'pending' || invoice.status === 'overdue';
+    const id = escapeHTML(invoice.id);
+
+    return [
+      escapeHTML(invoice.id),
+      `<strong>${escapeHTML(invoice.client_name || `Cliente #${invoice.client_id}`)}</strong>`,
+      escapeHTML(invoice.description),
+      money(invoice.amount),
+      date(invoice.due_date),
+      statusLabel(invoice.status),
+      open ? `
+        <div class="quick-actions">
+          <button type="button" class="btn btn-small btn-primary"
+            data-action="pay-invoice" data-id="${id}">Registrar pagamento</button>
+          <button type="button" class="btn btn-small"
+            data-action="cancel-invoice" data-id="${id}">Cancelar</button>
+        </div>
+      ` : '—'
+    ];
+  }
+
+  function drawFinance() {
+    const all = state.cache.invoices;
+    const sum = list => list.reduce((total, item) => total + Number(item.amount || 0), 0);
+
+    const open = all.filter(item => ['pending', 'overdue'].includes(item.status));
+    const overdue = all.filter(item => item.status === 'overdue');
+    const paid = all.filter(item => item.status === 'paid');
+
+    const rows = filteredInvoices();
+    const statuses = [
+      ['all', 'Todas'],
+      ['pending', 'Pendentes'],
+      ['overdue', 'Vencidas'],
+      ['paid', 'Pagas'],
+      ['cancelled', 'Canceladas']
+    ];
+
+    content.innerHTML = `
+      ${pageHeader('Financeiro',
+        'Acompanhe faturas, vencimentos e pagamentos.',
+        'Nova fatura', 'new-invoice')}
+
+      <section class="stats-grid">
+        ${statCard('Em aberto', money(sum(open)), `${open.length} fatura(s)`, '▤')}
+        ${statCard('Vencidas', money(sum(overdue)), `${overdue.length} fatura(s)`, '!')}
+        ${statCard('Pagas', money(sum(paid)), `${paid.length} fatura(s)`, 'R$')}
+        ${statCard('Total de faturas', String(all.length), 'Consulta até 500 registros', '#')}
+      </section>
+
+      <section class="content-card" style="margin-bottom:18px">
+        <div class="filter-bar">
+          <div class="filter-tabs" role="tablist">
+            ${statuses.map(([value, label]) => `
+              <button type="button" role="tab"
+                class="filter-tab ${state.financeStatus === value ? 'active' : ''}"
+                data-action="finance-filter" data-status="${value}">${label}</button>
+            `).join('')}
+          </div>
+          <label class="form-field filter-search">
+            <span>Pesquisar</span>
+            <input id="finance-search" type="search"
+              placeholder="Cliente, descrição ou nº da fatura"
+              value="${escapeHTML(state.financeSearch)}">
+          </label>
+        </div>
+        <p class="summary-footer">${rows.length} fatura(s) exibida(s).</p>
+      </section>
+
+      <div id="finance-table">
+        ${table(['ID', 'Cliente', 'Descrição', 'Valor', 'Vencimento', 'Status', 'Ação'],
+          rows.map(invoiceRow))}
+      </div>
+    `;
+
+    const search = $('#finance-search', content);
+
+    if (search) {
+      search.addEventListener('input', () => {
+        state.financeSearch = search.value;
+
+        const target = $('#finance-table', content);
+        const footer = content.querySelector('.summary-footer');
+        const list = filteredInvoices();
+
+        if (target) {
+          target.innerHTML = table(
+            ['ID', 'Cliente', 'Descrição', 'Valor', 'Vencimento', 'Status', 'Ação'],
+            list.map(invoiceRow)
+          );
+        }
+
+        if (footer) footer.textContent = `${list.length} fatura(s) exibida(s).`;
+      });
+    }
+  }
+
+  async function cancelInvoice(id) {
+    if (!confirm('Deseja cancelar esta fatura?\n\nEssa ação não pode ser desfeita.')) return;
+
+    try {
+      const result = await api(`/api/invoices/${encodeURIComponent(id)}/cancel`, {
+        method: 'PATCH'
+      });
+
+      notify(result.mensagem || 'Fatura cancelada.');
+      await navigate('finance');
+    } catch (error) {
+      notify(error.message, true);
+    }
+  }
+
+  // --------------------------------------------------
+  // SOLICITAÇÕES DOS CLIENTES
+  // --------------------------------------------------
+
+  async function refreshOrdersBadge() {
+    const badge = $('#orders-badge');
+
+    if (!badge || state.user?.role !== 'admin') return;
+
+    try {
+      const result = await api('/api/service-orders?status=pending');
+      const total = getArray(result, 'orders').length;
+
+      badge.textContent = total > 99 ? '99+' : String(total);
+      badge.hidden = total === 0;
+    } catch {
+      badge.hidden = true;
+    }
+  }
+
+  async function renderOrders() {
+    const status = state.orderStatus;
+    const query = status === 'all' ? '' : `?status=${encodeURIComponent(status)}`;
+
+    const result = await api(`/api/service-orders${query}`);
+    const orders = getArray(result, 'orders');
+    state.cache.orders = orders;
+
+    const tabs = [
+      ['pending', 'Pendentes'],
+      ['approved', 'Aprovadas'],
+      ['rejected', 'Rejeitadas'],
+      ['all', 'Todas']
+    ];
+
+    content.innerHTML = `
+      ${pageHeader('Solicitações',
+        'Analise os pedidos de serviço feitos pelos clientes no portal.')}
+
+      <section class="content-card" style="margin-bottom:18px">
+        <div class="filter-tabs" role="tablist">
+          ${tabs.map(([value, label]) => `
+            <button type="button" role="tab"
+              class="filter-tab ${status === value ? 'active' : ''}"
+              data-action="orders-filter" data-status="${value}">${label}</button>
+          `).join('')}
+        </div>
+        <p class="summary-footer">${orders.length} solicitação(ões) exibida(s).</p>
+      </section>
+
+      ${table(['Nº', 'Cliente', 'Serviço', 'Valor', 'Ciclo', 'Solicitada em', 'Status', 'Ação'],
+        orders.map(order => [
+          escapeHTML(order.id),
+          `<strong>${escapeHTML(order.client_name)}</strong>
+           <br><small>${escapeHTML(order.client_email || '—')}</small>`,
+          `${escapeHTML(order.service_name || order.description_snapshot)}
+           ${order.customer_notes
+             ? `<br><small>Cliente: ${escapeHTML(order.customer_notes)}</small>`
+             : ''}`,
+          money(order.amount_snapshot),
+          escapeHTML(cycleLabel(order.billing_cycle_snapshot)),
+          dateTime(order.created_at),
+          statusLabel(order.approval_status),
+          order.approval_status === 'pending'
+            ? `<button type="button" class="btn btn-small btn-primary"
+                 data-action="review-order" data-id="${escapeHTML(order.id)}">Analisar</button>`
+            : `<small>${escapeHTML(order.reviewed_by_name || '—')}<br>${dateTime(order.reviewed_at)}
+                 ${order.admin_notes ? `<br>“${escapeHTML(order.admin_notes)}”` : ''}</small>`
+        ]))}
+    `;
+  }
+
+  async function reviewOrder(id) {
+    let order = state.cache.orders.find(item => String(item.id) === String(id));
+
+    if (!order) {
+      const result = await api('/api/service-orders?status=pending');
+      order = getArray(result, 'orders').find(item => String(item.id) === String(id));
+    }
+
+    if (!order) {
+      notify('Solicitação não encontrada ou já analisada.', true);
+      return;
+    }
+
+    openModal(`Analisar solicitação #${order.id}`, `
+      <div class="order-summary">
+        <div><span>Cliente</span><strong>${escapeHTML(order.client_name)}</strong></div>
+        <div><span>Serviço</span><strong>${escapeHTML(order.service_name || order.description_snapshot)}</strong></div>
+        <div><span>Valor</span><strong>${escapeHTML(money(order.amount_snapshot))} · ${escapeHTML(cycleLabel(order.billing_cycle_snapshot))}</strong></div>
+        ${order.customer_notes ? `<div><span>Observação do cliente</span><strong>${escapeHTML(order.customer_notes)}</strong></div>` : ''}
+      </div>
+      ${field('Decisão', 'decision', 'text', true, [
+        { value: 'approved', label: 'Aprovar — criar serviço pendente de ativação' },
+        { value: 'rejected', label: 'Rejeitar solicitação' }
+      ])}
+      ${field('Observações para o histórico (opcional)', 'admin_notes', 'textarea', false)}
+    `, async values => {
+      await api(`/api/service-orders/${encodeURIComponent(order.id)}/review`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          decision: values.decision,
+          admin_notes: values.admin_notes || ''
+        })
+      });
+    }, {
+      submitLabel: 'Confirmar decisão',
+      successMessage: 'Solicitação analisada com sucesso.'
+    });
+  }
+
+  // --------------------------------------------------
+  // USUÁRIOS
+  // --------------------------------------------------
+
+  async function renderUsers() {
+    const result = await api('/api/users');
+    const users = getArray(result, 'users');
+    state.cache.users = users;
+
+    const roleLabel = role => role === 'admin' ? 'Administrador' : 'Equipe';
+
+    content.innerHTML = `
+      ${pageHeader('Usuários',
+        'Gerencie os acessos administrativos da plataforma.',
+        'Novo usuário', 'new-user')}
+      ${table(['Nome', 'E-mail', 'Perfil', 'Status', 'Cadastro', 'Ações'],
+        users.map(user => {
+          const inactive = user.active === 0 || user.active === false;
+          const self = Number(user.id) === Number(state.user?.id);
+          const id = escapeHTML(user.id);
+
+          return [
+            `<strong>${escapeHTML(user.name)}</strong>${self ? ' <small>(você)</small>' : ''}`,
+            escapeHTML(user.email),
+            escapeHTML(roleLabel(user.role)),
+            statusLabel(inactive ? 'inactive' : 'active'),
+            date(user.created_at),
+            `<div class="quick-actions">
+              <button type="button" class="btn btn-small" data-action="edit-user" data-id="${id}">Editar</button>
+              <button type="button" class="btn btn-small" data-action="reset-user-password" data-id="${id}">Senha</button>
+              ${self ? '' : `<button type="button" class="btn btn-small" data-action="toggle-user" data-id="${id}" data-status="${inactive ? 'active' : 'inactive'}" data-name="${escapeHTML(user.name)}">${inactive ? 'Ativar' : 'Inativar'}</button>`}
+            </div>`
+          ];
+        }))}
+    `;
+  }
+
+  function editUser(id) {
+    const user = state.cache.users.find(item => String(item.id) === String(id));
+
+    if (!user) {
+      notify('Usuário não encontrado.', true);
+      return;
+    }
+
+    openModal('Editar usuário', [
+      field('Nome', 'name', 'text', true, null, user.name),
+      field('Perfil de acesso', 'role', 'text', true, [
+        { value: 'staff', label: 'Equipe — acesso operacional' },
+        { value: 'admin', label: 'Administrador — acesso total' }
+      ], user.role)
+    ].join(''), values => api(`/api/users/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name: values.name, role: values.role })
+    }));
+  }
+
+  function resetUserPassword(id) {
+    const user = state.cache.users.find(item => String(item.id) === String(id));
+
+    openModal(`Redefinir senha${user ? ` — ${user.name}` : ''}`, [
+      field('Nova senha (mínimo 12 caracteres)', 'password', 'password')
+    ].join(''), values => api(`/api/users/${encodeURIComponent(id)}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ password: values.password })
+    }), {
+      submitLabel: 'Redefinir senha',
+      successMessage: 'Senha redefinida com sucesso.'
+    });
+  }
+
+  async function toggleUser(id, status, name) {
+    const activate = status === 'active';
+
+    if (!confirm(`${activate ? 'Ativar' : 'Inativar'} o usuário "${name || 'selecionado'}"?`)) return;
+
+    try {
+      const result = await api(`/api/users/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active: activate })
+      });
+
+      notify(result.mensagem || 'Status atualizado.');
+      await navigate('users');
+    } catch (error) {
+      notify(error.message, true);
+    }
+  }
+
+  function changeOwnPassword() {
+    openModal('Minha conta — alterar senha', [
+      field('Senha atual', 'current_password', 'password'),
+      field('Nova senha (mínimo 12 caracteres)', 'new_password', 'password'),
+      field('Confirmar nova senha', 'confirm_password', 'password')
+    ].join(''), async values => {
+      if (values.new_password !== values.confirm_password) {
+        throw new Error('A confirmação não confere com a nova senha.');
+      }
+
+      await api('/api/me/password', {
+        method: 'POST',
+        body: JSON.stringify({
+          current_password: values.current_password,
+          new_password: values.new_password
+        })
+      });
+    }, {
+      submitLabel: 'Alterar senha',
+      successMessage: 'Senha alterada com sucesso.'
+    });
+  }
+
+  // --------------------------------------------------
+  // CAMPOS E MODAIS
+  // --------------------------------------------------
+
+  function field(label, name, type = 'text', required = true, options = null, value = '') {
+    let control;
+    const safeValue = escapeHTML(value);
+
+    if (options) {
+      control = `
+        <select name="${escapeHTML(name)}" ${required ? 'required' : ''}>
+          ${options.map(option => `
+            <option value="${escapeHTML(option.value)}"
+              ${String(option.value) === String(value) ? 'selected' : ''}>
+              ${escapeHTML(option.label)}
+            </option>
+          `).join('')}
+        </select>
+      `;
+    } else if (type === 'textarea') {
+      control = `<textarea name="${escapeHTML(name)}" ${required ? 'required' : ''}>${safeValue}</textarea>`;
+    } else {
+      control = `
+        <input name="${escapeHTML(name)}" type="${escapeHTML(type)}"
+          value="${safeValue}" ${required ? 'required' : ''}
+          ${type === 'number' ? 'min="0" step="0.01"' : ''}
+          ${type === 'password' ? 'minlength="12" maxlength="128"' : ''}>
+      `;
+    }
+
+    return `<label class="form-field"><span>${escapeHTML(label)}</span>${control}</label>`;
+  }
+
+  function ensureModal() {
+    modal = $('#modal');
+
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'modal';
+      modal.hidden = true;
+      document.body.appendChild(modal);
+    }
+
+    return modal;
+  }
+
+  function openModal(title, fieldsHTML, onSubmit, options = {}) {
+    const submitLabel = options.submitLabel || 'Salvar';
+    const successMessage = options.successMessage || 'Registro salvo com sucesso.';
+    const modalElement = ensureModal();
+
+    modalElement.innerHTML = `
+      <div class="modal-backdrop" data-action="close-modal"></div>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <h2 id="modal-title">${escapeHTML(title)}</h2>
+          <button type="button" class="btn btn-small" data-action="close-modal" aria-label="Fechar janela">Fechar</button>
+        </div>
+        <form id="record-form">
+          <div class="modal-body">${fieldsHTML}</div>
+          <div class="modal-footer">
+            <button type="button" class="btn" data-action="close-modal">Cancelar</button>
+            <button type="submit" class="btn btn-primary">${escapeHTML(submitLabel)}</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    modalElement.hidden = false;
+    modalElement.style.display = 'block';
+    modalElement.setAttribute('aria-hidden', 'false');
+
+    const form = $('#record-form', modalElement);
+
+    if (!form) {
+      notify('Não foi possível montar o formulário.', true);
+      return;
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+
+      const button = form.querySelector('[type="submit"]');
+      const values = Object.fromEntries(new FormData(form).entries());
+
+      button.disabled = true;
+      button.textContent = 'Salvando...';
+
+      try {
+        await onSubmit(values);
+        closeModal();
+        notify(successMessage);
+
+        if (state.page === 'client-record' && state.currentClientId) {
+          await refreshClientRecord(state.currentClientId);
+        } else {
+          await navigate(state.page);
+        }
+      } catch (error) {
+        notify(error.message || 'Erro ao salvar o registro.', true);
+      } finally {
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = submitLabel;
+        }
+      }
+    });
+
+    const first = form.querySelector('input, select, textarea');
+    if (first) first.focus();
+  }
+
+  function closeModal() {
+    modal = $('#modal');
+    if (!modal) return;
+
+    modal.hidden = true;
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = '';
+  }
+
+  // --------------------------------------------------
+  // CADASTROS
+  // --------------------------------------------------
+
+  function createClient() {
+    openModal('Novo cliente', [
+      field('Nome completo / empresa', 'name'),
+      field('E-mail', 'email', 'email', false),
+      field('Telefone', 'phone', 'tel', false),
+      field('CPF / CNPJ', 'document', 'text', false),
+      field('Observações', 'notes', 'textarea', false)
+    ].join(''), values => api('/api/clients', {
+      method: 'POST',
+      body: JSON.stringify(values)
+    }));
+  }
+
+  async function createService() {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem cadastrar serviços.', true);
+      return;
+    }
+
+    try {
+      const result = await api('/api/service-categories');
+      const categories = Array.isArray(result)
+        ? result
+        : getArray(result, 'categories').length
+          ? getArray(result, 'categories')
+          : getArray(result, 'items');
+
+      state.cache.categories = categories;
+      const activeCategories = categories.filter(isActive);
+
+      if (!activeCategories.length) {
+        notify('Cadastre e ative pelo menos uma categoria antes de criar um serviço.', true);
+        await navigate('categories');
+        return;
+      }
+
+      const categoryOptions = [
+        { value: '', label: 'Selecione uma categoria...' },
+        ...activeCategories.map(category => {
+          const parent = category.parent_id
+            ? categories.find(item => String(item.id) === String(category.parent_id))
+            : null;
+
+          return {
+            value: String(category.id),
+            label: parent ? `${parent.name} → ${category.name}` : category.name
+          };
+        })
+      ];
+
+      openModal('Novo serviço', [
+        field('Nome do serviço', 'name'),
+        field('Descrição', 'description', 'textarea', false),
+        field('Categoria / subcategoria', 'category_id', 'text', true, categoryOptions, ''),
+        field('Preço (R$)', 'price', 'number'),
+        field('Ciclo de cobrança', 'billing_cycle', 'text', true, [
+          { value: 'one_time', label: 'Cobrança única' },
+          { value: 'monthly', label: 'Mensal' },
+          { value: 'yearly', label: 'Anual' }
+        ]),
+        field('Exibir na vitrine principal?', 'featured', 'text', true, [
+          { value: '1', label: 'Sim — exibir na vitrine' },
+          { value: '0', label: 'Não — somente no catálogo da categoria' }
+        ], '0')
+      ].join(''), values => {
+        const selectedCategory = activeCategories.find(
+          category => String(category.id) === String(values.category_id)
+        );
+
+        if (!selectedCategory) {
+          throw new Error('Selecione uma categoria ou subcategoria ativa.');
+        }
+
+        const name = String(values.name || '').trim();
+        if (!name) throw new Error('Informe o nome do serviço.');
+
+        const price = Number(values.price);
+        if (!Number.isFinite(price) || price < 0) {
+          throw new Error('Informe um preço válido.');
+        }
+
+        return api('/api/services', {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            description: values.description || '',
+            category_id: Number(selectedCategory.id),
+            category: selectedCategory.name,
+            price,
+            billing_cycle: values.billing_cycle,
+            featured: values.featured === '1'
+          })
+        });
+      });
+    } catch (error) {
+      notify(error.message || 'Não foi possível carregar as categorias.', true);
+    }
+  }
+
+  async function editService(id) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem editar serviços.', true);
+      return;
+    }
+
+    const service = state.cache.services.find(item => String(item.id) === String(id));
+
+    if (!service) {
+      notify('Serviço não encontrado na lista atual. Atualize a tela.', true);
+      return;
+    }
+
+    try {
+      const result = await api('/api/service-categories');
+      const categories = Array.isArray(result)
+        ? result
+        : getArray(result, 'categories').length
+          ? getArray(result, 'categories')
+          : getArray(result, 'items');
+
+      state.cache.categories = categories;
+
+      const categoryOptions = [
+        { value: '', label: 'Selecione uma categoria...' },
+        ...categories.filter(isActive).map(category => {
+          const parent = category.parent_id
+            ? categories.find(item => String(item.id) === String(category.parent_id))
+            : null;
+
+          return {
+            value: String(category.id),
+            label: parent ? `${parent.name} → ${category.name}` : category.name
+          };
+        })
+      ];
+
+      const selectedId = service.category_id != null
+        ? String(service.category_id)
+        : String((categories.find(category =>
+            category.name === service.category
+          )?.id) || '');
+
+      openModal('Editar serviço', [
+        field('Nome do serviço', 'name', 'text', true, null, service.name || ''),
+        field('Descrição', 'description', 'textarea', false, null, service.description || ''),
+        field('Categoria / subcategoria', 'category_id', 'text', true, categoryOptions, selectedId),
+        field('Preço (R$)', 'price', 'number', true, null, String(service.price ?? 0)),
+        field('Ciclo de cobrança', 'billing_cycle', 'text', true, [
+          { value: 'one_time', label: 'Cobrança única' },
+          { value: 'monthly', label: 'Mensal' },
+          { value: 'yearly', label: 'Anual' }
+        ], service.billing_cycle || 'monthly'),
+        field('Exibir na vitrine principal?', 'featured', 'text', true, [
+          { value: '1', label: 'Sim — exibir na vitrine' },
+          { value: '0', label: 'Não — somente no catálogo da categoria' }
+        ], isFeatured(service) ? '1' : '0')
+      ].join(''), values => {
+        const selectedCategory = categories.find(category =>
+          String(category.id) === String(values.category_id) && isActive(category)
+        );
+
+        if (!selectedCategory) {
+          throw new Error('Selecione uma categoria ou subcategoria ativa.');
+        }
+
+        const name = String(values.name || '').trim();
+        if (!name) throw new Error('Informe o nome do serviço.');
+
+        const price = Number(values.price);
+        if (!Number.isFinite(price) || price < 0) {
+          throw new Error('Informe um preço válido.');
+        }
+
+        return api(`/api/services/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            name,
+            description: values.description || '',
+            category_id: Number(selectedCategory.id),
+            category: selectedCategory.name,
+            price,
+            billing_cycle: values.billing_cycle,
+            featured: values.featured === '1'
+          })
+        });
+      });
+    } catch (error) {
+      notify(error.message || 'Não foi possível carregar o serviço para edição.', true);
+    }
+  }
+
+  function createUser() {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem cadastrar usuários.', true);
+      return;
+    }
+
+    openModal('Novo usuário', [
+      field('Nome', 'name'),
+      field('E-mail', 'email', 'email'),
+      field('Senha (mínimo 12 caracteres)', 'password', 'password'),
+      field('Perfil', 'role', 'text', true, [
+        { value: 'staff', label: 'Equipe' },
+        { value: 'admin', label: 'Administrador' }
+      ])
+    ].join(''), values => api('/api/users', {
+      method: 'POST',
+      body: JSON.stringify(values)
+    }));
+  }
+
+  async function createInvoice(clientId = null) {
+    let clients = state.cache.clients;
+
+    if (!clients.length) {
+      clients = getArray(await api('/api/clients'), 'clients');
+      state.cache.clients = clients;
+    }
+
+    clients = clients.filter(client => !client.status || client.status === 'active');
+
+    if (!clients.length) {
+      notify('Cadastre um cliente ativo antes de criar uma fatura.', true);
+      return;
+    }
+
+    const selectedClient = clients.find(client => String(client.id) === String(clientId));
+
+    openModal('Nova fatura', [
+      field('Cliente', 'client_id', 'text', true,
+        clients.map(client => ({
+          value: client.id,
+          label: `${client.name} (${client.email || 'sem e-mail'})`
+        })),
+        selectedClient ? selectedClient.id : ''),
+      field('Descrição', 'description'),
+      field('Valor (R$)', 'amount', 'number'),
+      field('Data de vencimento', 'due_date', 'date', false)
+    ].join(''), values => api('/api/invoices', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...values,
+        client_id: Number(values.client_id),
+        amount: Number(values.amount),
+        due_date: values.due_date || null
+      })
+    }));
+  }
+
+  async function payInvoice(id, returnToClient = false) {
+    const invoice = state.cache.invoices.find(item => String(item.id) === String(id));
+
+    if (!invoice) {
+      notify('Não foi possível localizar a fatura na lista atual.', true);
+      return;
+    }
+
+    if (invoice.status === 'paid' || invoice.status === 'cancelled') {
+      notify('Esta fatura não aceita registro de pagamento.', true);
+      return;
+    }
+
+    if (!confirm(`Registrar o pagamento integral de ${money(invoice.amount)} da fatura #${invoice.id}?`)) return;
+
+    try {
+      await api(`/api/invoices/${encodeURIComponent(id)}/payments`, {
+        method: 'POST',
+        body: JSON.stringify({ method: 'manual' })
+      });
+
+      notify('Pagamento registrado.');
+
+      if (returnToClient && state.currentClientId) {
+        await refreshClientRecord(state.currentClientId);
+      } else {
+        await navigate('finance');
+      }
+    } catch (error) {
+      notify(error.message, true);
+    }
+  }
+
+  async function refreshClientRecord(id) {
+    await openClientRecord(id);
+  }
+
+  async function loadInvoiceForClientPayment(invoiceId) {
+    try {
+      if (!state.cache.invoices.length) {
+        const result = await api('/api/invoices');
+        state.cache.invoices = getArray(result, 'invoices');
+      }
+
+      await payInvoice(invoiceId, true);
+    } catch (error) {
+      notify(error.message || 'Não foi possível carregar a fatura.', true);
+    }
+  }
+
+  async function logout() {
+    try {
+      await api('/api/logout', { method: 'POST' });
+    } catch {
+      // Encerra a sessão visual mesmo se a requisição falhar.
+    }
+
+    closeModal();
+    showLogin();
+  }
+
+  // --------------------------------------------------
+  // LOGIN
+  // --------------------------------------------------
+
+  async function handleLogin(event) {
+    event.preventDefault();
+    if (loginError) loginError.textContent = '';
+
+    const form = event.currentTarget;
+    const email = $('[name="email"]', form)?.value?.trim();
+    const password = $('[name="password"]', form)?.value;
+
+    if (!email || !password) {
+      if (loginError) loginError.textContent = 'Informe o e-mail e a senha.';
+      return;
+    }
+
+    const button = form.querySelector('[type="submit"]');
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Entrando...';
+    }
+
+    try {
+      const result = await api('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+
+      let user = normalizeUser(result);
+
+      if (!user || !user.email) {
+        try {
+          user = normalizeUser(await api('/api/me'));
+        } catch {
+          user = null;
+        }
+      }
+
+      if (!user) {
+        throw new Error('A API não retornou os dados do usuário autenticado.');
+      }
+
+      state.user = user;
+      showApp();
+    } catch (error) {
+      if (loginError) loginError.textContent = error.message;
+      else alert(error.message);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Entrar no painel';
+      }
+    }
+  }
+
+  const loginForm = $('#login-form');
+
+  if (loginForm) {
+    loginForm.addEventListener('submit', handleLogin);
+
+    const loginButton = loginForm.querySelector('button[type="submit"], button:not([type])');
+
+    if (loginButton) {
+      loginButton.addEventListener('click', event => {
+        event.preventDefault();
+        handleLogin({
+          preventDefault() {},
+          currentTarget: loginForm
+        });
+      });
+    }
+  } else {
+    console.error('VortexGrid: formulário #login-form não encontrado. Verifique se o index.html correto está publicado.');
+  }
+
+  // --------------------------------------------------
+  // CLIQUES
+  // --------------------------------------------------
+
+  document.addEventListener('click', event => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const element = target.closest('[data-page], [data-action], [data-logout]');
+    if (!element) return;
+
+    if (element.dataset.page) {
+      event.preventDefault();
+      navigate(element.dataset.page);
+      return;
+    }
+
+    if (element.hasAttribute('data-logout') || element.dataset.action === 'logout') {
+      event.preventDefault();
+      logout();
+      return;
+    }
+
+    const action = element.dataset.action;
+    if (!action) return;
+
+    event.preventDefault();
+
+    try {
+      switch (action) {
+        case 'new-client':
+          createClient();
+          break;
+
+        case 'client-record':
+          openClientRecord(element.dataset.id);
+          break;
+
+        case 'clients-back':
+          state.currentClientId = null;
+          navigate('clients');
+          break;
+
+        case 'refresh-client-record':
+          refreshClientRecord(element.dataset.id);
+          break;
+
+        case 'add-contracted-service':
+          addContractedService(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+
+        case 'change-contracted-service-status':
+          changeContractedServiceStatus(
+            element.dataset.id,
+            element.dataset.status,
+            element.dataset.name
+          );
+          break;
+
+        case 'new-invoice-for-client':
+          createInvoice(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+
+        case 'pay-invoice-from-record':
+          loadInvoiceForClientPayment(element.dataset.id);
+          break;
+
+        case 'edit-client':
+          editClient(element.dataset.id);
+          break;
+
+        case 'toggle-client':
+          toggleClient(element.dataset.id, element.dataset.status);
+          break;
+
+        case 'new-service':
+          createService();
+          break;
+
+        case 'edit-service':
+          editService(element.dataset.id);
+          break;
+
+        case 'toggle-service':
+          toggleService(
+            element.dataset.id,
+            element.dataset.status,
+            element.dataset.name
+          );
+          break;
+
+        case 'manage-categories':
+          navigate('categories');
+          break;
+
+        case 'back-to-services':
+          navigate('services');
+          break;
+
+        case 'new-category':
+          createCategory();
+          break;
+
+        case 'edit-category':
+          editCategory(element.dataset.id);
+          break;
+
+        case 'delete-category':
+          deleteCategory(element.dataset.id, element.dataset.name);
+          break;
+
+        case 'toggle-category':
+          toggleCategory(
+            element.dataset.id,
+            element.dataset.status,
+            element.dataset.name
+          );
+          break;
+
+        case 'new-user':
+          createUser();
+          break;
+
+        case 'edit-user':
+          editUser(element.dataset.id);
+          break;
+
+        case 'reset-user-password':
+          resetUserPassword(element.dataset.id);
+          break;
+
+        case 'toggle-user':
+          toggleUser(element.dataset.id, element.dataset.status, element.dataset.name);
+          break;
+
+        case 'my-account':
+          changeOwnPassword();
+          break;
+
+        case 'orders-filter':
+          state.orderStatus = element.dataset.status || 'pending';
+          navigate('orders');
+          break;
+
+        case 'review-order':
+          reviewOrder(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+
+        case 'finance-filter':
+          state.financeStatus = element.dataset.status || 'all';
+          drawFinance();
+          break;
+
+        case 'cancel-invoice':
+          cancelInvoice(element.dataset.id);
+          break;
+
+        case 'new-invoice':
+          createInvoice().catch(error => notify(error.message, true));
+          break;
+
+        case 'pay-invoice':
+          payInvoice(element.dataset.id);
+          break;
+
+        case 'close-modal':
+          closeModal();
+          break;
+
+        case 'reload':
+          if (state.page === 'client-record' && state.currentClientId) {
+            refreshClientRecord(state.currentClientId);
+          } else {
+            navigate(state.page);
+          }
+          break;
+
+        default:
+          console.warn('VortexGrid: ação sem manipulador:', action);
+      }
+    } catch (error) {
+      console.error('VortexGrid: falha ao executar ação:', error);
+      notify(error.message || 'Não foi possível executar esta ação.', true);
+    }
+  });
+
+  // --------------------------------------------------
+  // INICIALIZAÇÃO
+  // --------------------------------------------------
+
+  async function init() {
+    if (!loginView || !app || !content) {
+      console.error('VortexGrid: confira #login-view, #app-view e #page-content no index.html.');
+      return;
+    }
+
+    try {
+      const result = await api('/api/me');
+      const user = normalizeUser(result);
+
+      if (!user) {
+        showLogin();
+        return;
+      }
+
+      state.user = user;
+      showApp();
+    } catch {
+      showLogin();
+    }
+  }
+
+  init();
+})();
+, fatura: '▤', ativacao: '↗', solicitacao: '⋯' };
+          const descricao = [item.descricao, item.data ? date(item.data) : ''].filter(Boolean).join(' · ');
+          return '<article class="activity-row"><span class="activity-marker activity-marker-' + escapeHTML(item.tipo) + '" aria-hidden="true">' + (symbols[item.tipo] || '•') + '</span><div class="activity-main"><div class="activity-title-line"><strong>' + escapeHTML(item.titulo || labels[item.tipo] || 'Atividade') + '</strong><span class="activity-type activity-type-' + escapeHTML(item.tipo) + '">' + (labels[item.tipo] || 'Atividade') + '</span></div><p>' + escapeHTML(descricao) + '</p></div><div class="activity-side">' + (item.valor !== null && item.valor !== undefined ? '<strong>' + escapeHTML(money(item.valor)) + '</strong>' : '') + '<button type="button" class="btn btn-small" data-page="' + escapeHTML(item.pagina || 'dashboard') + '">Abrir <span aria-hidden="true">→</span></button></div></article>';
+        }).join('') + '</div>' : '<div class="empty-state">Ainda não há atividades recentes para exibir.</div>'}
       </section>
 
       <section class="dashboard-grid">
