@@ -3076,7 +3076,7 @@ app.post('/api/invoices/:id/mercadopago/pix', autenticado, somenteAdmin, async (
 app.get('/api/admin/mercadopago/diagnostico/:paymentId', autenticado, somenteAdmin, async (req, res) => {
   const paymentId = typeof req.params.paymentId === 'string' ? req.params.paymentId.trim() : '';
 
-  if (!/^\\d{1,30}$/.test(paymentId)) {
+  if (!/^\d{1,30}$/.test(paymentId)) {
     return erro(res, 400, 'ID de pagamento inválido.');
   }
 
