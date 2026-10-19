@@ -5010,3 +5010,74 @@ a { transition: color .18s ease, opacity .18s ease; }
 @media(max-width:1180px){#app-view .topbar{flex-wrap:wrap}#app-view .topbar-actions{width:100%;justify-content:space-between}#app-view .global-search-wrap{flex:1;width:auto}}
 @media(max-width:760px){#login-view.login-page{padding:12px}#login-view .login-shell{display:flex;min-height:auto;flex-direction:column;gap:18px;padding:16px;border-radius:22px}#login-view .login-story-content{padding:6px 0}#login-view .login-story-content h2{margin:12px 0 8px;font-size:clamp(28px,7vw,38px);letter-spacing:-1px}#login-view .login-story-content>p{font-size:12px}#login-view .login-story-brand,#login-view .login-story-features,#login-view .login-story-footer{display:none}#login-view .login-panel{width:100%;padding:23px 19px}#app-view .topbar-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}#app-view .global-search-wrap{grid-column:1/-1;grid-row:1}#app-view .topbar-utility{grid-column:1;grid-row:2}#app-view .user-chip{grid-column:2;grid-row:2;justify-self:end}}
 @media(max-width:430px){#app-view .global-search kbd{display:none}#app-view .topbar-shortcut-button{padding:0 8px;font-size:9px}}
+
+/* Refinamento de produto — painel operacional híbrido premium */
+#app-view.app-layout{background:#f3f4f9;color:#282a3d}
+#app-view .main-area{background:linear-gradient(180deg,#f8f8fc 0,#f2f3f8 100%)}
+#app-view .content{padding-top:30px}
+#app-view .content>.page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:0 0 25px;padding:0 0 20px;border-bottom:1px solid #e4e5ef}
+#app-view .page-header>div{min-width:0}
+#app-view .page-header h1{margin:0;color:#202137;font-size:clamp(23px,2.2vw,30px);line-height:1.25;letter-spacing:-1px}
+#app-view .page-header p{max-width:740px;margin:8px 0 0;color:#85899d;font-size:12px;line-height:1.7}
+#app-view .page-header>.btn,#app-view .page-header>button{flex:0 0 auto}
+#app-view .stats-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin:0 0 22px}
+#app-view .stats-grid:not(.stats-grid-admin){grid-template-columns:repeat(4,minmax(0,1fr))}
+#app-view .stat-card{position:relative;display:flex;min-height:164px;flex-direction:column;justify-content:space-between;gap:20px;padding:19px;border:1px solid #e6e7f0;border-radius:16px;background:linear-gradient(145deg,#fff 0%,#fdfdff 100%);box-shadow:0 4px 16px #20204406}
+#app-view .stat-card:before{position:absolute;top:0;right:18px;left:18px;height:2px;border-radius:0 0 3px 3px;background:linear-gradient(90deg,#7c5cf4,#c5b8ff);content:""}
+#app-view .stat-card-top{align-items:center}
+#app-view .stat-label{max-width:calc(100% - 46px);color:#777b91;font-size:10px;letter-spacing:.015em}
+#app-view .stat-icon{width:38px;height:38px;border:1px solid #e8e2ff;border-radius:12px;background:#f4f1ff;color:#7051e9}
+#app-view .stat-value,#app-view .stat-number{overflow-wrap:anywhere;color:#22233a;font-size:clamp(21px,1.8vw,28px);letter-spacing:-.8px}
+#app-view .stat-description{margin-top:5px;color:#9296a8;font-size:10px;line-height:1.55}
+#app-view .alert-center{border-color:#e5e6ef;border-radius:16px;background:#fff}
+#app-view .dashboard-alert{border-radius:12px}
+#app-view .dashboard-alert-danger{border-color:#f1d8dc;background:#fff8f8}
+#app-view .dashboard-alert-warning{border-color:#f1e5ca;background:#fffcf5}
+#app-view .dashboard-alert-info{border-color:#dce6fb;background:#f7faff}
+#app-view .alert-center-clear{display:flex;align-items:center;gap:14px;border-color:#dbece3;background:linear-gradient(100deg,#f7fcf9,#fff)}
+#app-view .alert-center-clear>div{flex:1}
+#app-view .alert-center-clear p{margin:4px 0 0;color:#85899d;font-size:11px}
+#app-view .alert-clear-icon{display:grid;width:36px;height:36px;flex:0 0 36px;place-items:center;border-radius:12px;background:#e4f5eb;color:#23814e;font-weight:800}
+#app-view .financial-overview{background:linear-gradient(120deg,#fff 55%,#faf8ff)}
+#app-view .financial-summary-item{border-color:#e8e8f0;border-radius:13px;background:#fff}
+#app-view .financial-summary-item>strong{color:#25263b;font-family:Manrope,sans-serif;font-size:clamp(19px,1.8vw,25px);letter-spacing:-.6px}
+#app-view .financial-progress{height:10px;overflow:hidden;border-radius:999px;background:#eeedf5}
+#app-view .financial-progress-current,#app-view .financial-progress-overdue{height:100%;border-radius:999px}
+#app-view .financial-progress-current{background:linear-gradient(90deg,#35b77c,#62d6a0)}
+#app-view .financial-progress-overdue{background:linear-gradient(90deg,#e96c7d,#d83d57)}
+#app-view .activity-center{margin-top:0;margin-bottom:22px}
+#app-view .activity-row{grid-template-columns:40px minmax(0,1fr) auto;gap:13px}
+#app-view .activity-main{min-width:0}
+#app-view .activity-title-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+#app-view .activity-title-line>strong{color:#303148;font-size:12px}
+#app-view .activity-main>p{margin:5px 0 0;color:#8b8fa2;font-size:10px;line-height:1.6}
+#app-view .activity-side{display:flex;align-items:flex-end;gap:10px}
+#app-view .activity-side>strong{color:#303148;font-size:11px}
+#app-view .dashboard-grid{gap:18px;margin-bottom:18px}
+#app-view .dashboard-grid>.content-card{min-width:0;padding:22px;border-radius:16px}
+#app-view .dashboard-grid .panel-heading{align-items:center}
+#app-view .bar-chart{min-height:180px}
+#app-view .list-row{gap:12px;padding:15px 0}
+#app-view .list-row-main{min-width:0}
+#app-view .list-row-main>strong{color:#33344a;font-size:11px}
+#app-view .list-row-main>small{color:#8b8fa2;font-size:10px;line-height:1.6}
+#app-view .list-row-side{flex:0 0 auto}
+#app-view .mini-stats>div{border-bottom:1px solid #eff0f5}
+#app-view .mini-stats>div>strong{color:#25263b;font-family:Manrope,sans-serif;font-size:22px}
+#app-view .mini-stats>div>span{color:#85899d;font-size:10px}
+#app-view .sidebar{background:radial-gradient(ellipse at 0 0,rgba(116,88,255,.17),transparent 40%),linear-gradient(180deg,#191827 0%,#14131f 60%,#11111a 100%)}
+#app-view .sidebar>.brand .brand-mark{box-shadow:0 5px 17px #795bff35}
+#app-view .sidebar-collapse-toggle{margin-top:15px}
+#app-view .topbar{min-height:102px;padding:20px clamp(22px,3vw,42px);box-shadow:0 5px 18px #1b1a3805}
+#app-view .topbar-heading .eyebrow{color:#8a74ec;font-weight:800}
+#app-view .user-chip{max-width:210px}
+#app-view .user-chip-copy{min-width:0}
+#app-view .user-chip-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app-view .table-wrapper{box-shadow:0 4px 18px #24234305}
+#app-view .table-wrapper tbody tr{transition:background .15s ease}
+#app-view .btn:focus-visible,#app-view button:focus-visible,#app-view a:focus-visible{outline:3px solid #aa98ff;outline-offset:2px}
+@media(max-width:1280px){#app-view .stats-grid.stats-grid-admin{grid-template-columns:repeat(3,minmax(0,1fr))}#app-view .stats-grid:not(.stats-grid-admin){grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:980px){#app-view .topbar{align-items:flex-start}#app-view .topbar-heading{flex:1}#app-view .stats-grid.stats-grid-admin{grid-template-columns:repeat(2,minmax(0,1fr))}#app-view .financial-summary-grid{grid-template-columns:1fr}#app-view .dashboard-grid,#app-view .dashboard-grid-secondary{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:760px){#app-view .content{padding-top:21px}#app-view .content>.page-header{align-items:flex-start;flex-direction:column;padding-bottom:17px}#app-view .content>.page-header>.btn,#app-view .content>.page-header>button{width:100%}#app-view .stats-grid.stats-grid-admin,#app-view .stats-grid:not(.stats-grid-admin){grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}#app-view .stat-card{min-height:145px;padding:15px}#app-view .stat-label{font-size:10px}#app-view .stat-value,#app-view .stat-number{font-size:22px}#app-view .alert-center-clear{align-items:flex-start;flex-wrap:wrap}#app-view .alert-center-clear .alert-count{margin-left:50px}#app-view .activity-row{grid-template-columns:35px minmax(0,1fr);gap:10px}#app-view .activity-marker{width:34px;height:34px}#app-view .activity-side{grid-column:2;justify-content:space-between;align-items:center}#app-view .activity-side>button{margin-left:auto}#app-view .dashboard-grid>.content-card{padding:17px}#app-view .financial-summary-grid{gap:9px}}
+@media(max-width:420px){#app-view .stats-grid.stats-grid-admin,#app-view .stats-grid:not(.stats-grid-admin){grid-template-columns:minmax(0,1fr)}#app-view .stat-card{min-height:125px}#app-view .topbar-shortcut-button{white-space:normal}#app-view .alert-center .panel-heading{flex-direction:column}}
+@media(prefers-reduced-motion:reduce){#app-view *,#login-view *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
