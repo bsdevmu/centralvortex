@@ -2870,6 +2870,89 @@ app.patch('/api/invoices/:id/cancel', autenticado, somenteAdmin, async (req, res
 });
 
 // --------------------------------------------------
+// WEBHOOK MERCADO PAGO — RECEBIMENTO SEGURO
+// --------------------------------------------------
+
+const crypto = require('crypto');
+
+function validarAssinaturaMercadoPago(req) {
+  const segredo = process.env.MP_WEBHOOK_SECRET;
+  const assinatura = req.get('x-signature') || '';
+  const requestId = req.get('x-request-id') || '';
+  const dataId = typeof req.query['data.id'] === 'string'
+    ? req.query['data.id'].toLowerCase()
+    : '';
+
+  // Sem o segredo cadastrado, a notificação não é considerada confiável.
+  if (!segredo || !assinatura || !requestId || !dataId) {
+    return false;
+  }
+
+  const partes = Object.fromEntries(
+    assinatura.split(',').map(parte => {
+      const separador = parte.trim().indexOf('=');
+      return separador < 0
+        ? ['', '']
+        : [
+            parte.trim().slice(0, separador),
+            parte.trim().slice(separador + 1)
+          ];
+    }).filter(([chave, valor]) => chave && valor)
+  );
+
+  if (!partes.ts || !partes.v1) {
+    return false;
+  }
+
+  const manifesto = `id:${dataId};request-id:${requestId};ts:${partes.ts};`;
+  const esperado = crypto
+    .createHmac('sha256', segredo)
+    .update(manifesto)
+    .digest('hex');
+
+  const recebidoBuffer = Buffer.from(partes.v1, 'hex');
+  const esperadoBuffer = Buffer.from(esperado, 'hex');
+
+  return recebidoBuffer.length === esperadoBuffer.length &&
+    crypto.timingSafeEqual(recebidoBuffer, esperadoBuffer);
+}
+
+// GET serve apenas para confirmar que o caminho existe no servidor.
+// O Mercado Pago envia notificações por POST.
+app.get('/api/webhooks/mercadopago', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  return res.status(405).json({
+    erro: 'Endpoint disponível. O webhook recebe notificações por POST.'
+  });
+});
+
+app.post('/api/webhooks/mercadopago', async (req, res) => {
+  if (!process.env.MP_WEBHOOK_SECRET) {
+    console.error('Webhook Mercado Pago recebido, mas MP_WEBHOOK_SECRET não está configurado.');
+    return erro(res, 503, 'Webhook ainda não configurado no servidor.');
+  }
+
+  if (!validarAssinaturaMercadoPago(req)) {
+    console.warn('Webhook Mercado Pago rejeitado: assinatura inválida ou ausente.');
+    return erro(res, 401, 'Assinatura do webhook inválida.');
+  }
+
+  // Nesta primeira etapa apenas validamos a origem e confirmamos o recebimento.
+  // A confirmação financeira e a atualização da fatura serão implementadas
+  // após consultar a API do Mercado Pago e registrar o evento de forma idempotente.
+  const tipo = typeof req.body?.type === 'string'
+    ? req.body.type.slice(0, 80)
+    : (typeof req.body?.action === 'string' ? req.body.action.slice(0, 80) : 'desconhecido');
+
+  console.info('Webhook Mercado Pago autenticado recebido.', {
+    tipo,
+    requestId: req.get('x-request-id')
+  });
+
+  return res.status(200).json({ recebido: true });
+});
+
+// --------------------------------------------------
 // INTERFACE E ERROS
 // --------------------------------------------------
 
