@@ -1202,6 +1202,10 @@ textarea {
   margin-bottom: 23px;
 }
 
+.stats-grid-admin {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .stat-card {
   position: relative;
   min-width: 0;
@@ -2379,7 +2383,8 @@ dialog::backdrop {
     padding-left: 26px;
   }
 
-  .stats-grid {
+  .stats-grid,
+  .stats-grid-admin {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
