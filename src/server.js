@@ -3068,6 +3068,84 @@ app.post('/api/invoices/:id/mercadopago/pix', autenticado, somenteAdmin, async (
   }
 });
 
+// --------------------------------------------------
+// MERCADO PAGO — DIAGNÓSTICO SOMENTE LEITURA (ADMIN)
+// Consulta o pagamento na API e compara com os registros locais,
+// sem criar cobrança, registrar recebimento ou alterar fatura.
+// --------------------------------------------------
+app.get('/api/admin/mercadopago/diagnostico/:paymentId', autenticado, somenteAdmin, async (req, res) => {
+  const paymentId = typeof req.params.paymentId === 'string' ? req.params.paymentId.trim() : '';
+
+  if (!/^\\d{1,30}$/.test(paymentId)) {
+    return erro(res, 400, 'ID de pagamento inválido.');
+  }
+
+  if (!process.env.MP_ACCESS_TOKEN) {
+    return erro(res, 503, 'Mercado Pago não configurado: falta MP_ACCESS_TOKEN no ambiente.');
+  }
+
+  try {
+    const payment = await mercadoPagoRequest(
+      `${MP_API_BASE}/v1/payments/${encodeURIComponent(paymentId)}`,
+      { method: 'GET' }
+    );
+
+    const [transactionRows] = await db.query(
+      `SELECT id, invoice_id, payment_id, status, amount, created_at, updated_at
+       FROM mercadopago_transactions
+       WHERE payment_id = ?
+       LIMIT 1`,
+      [String(payment.id)]
+    );
+    const transaction = transactionRows[0] || null;
+
+    let invoice = null;
+    if (transaction) {
+      const [invoiceRows] = await db.query(
+        'SELECT id, amount, status, description FROM invoices WHERE id = ? LIMIT 1',
+        [transaction.invoice_id]
+      );
+      invoice = invoiceRows[0] || null;
+    }
+
+    return res.set('Cache-Control', 'no-store').json({
+      somente_leitura: true,
+      mercado_pago: {
+        payment_id: String(payment.id),
+        status: payment.status || null,
+        status_detail: payment.status_detail || null,
+        transaction_amount: Number(payment.transaction_amount || 0),
+        external_reference: payment.external_reference || null,
+        currency_id: payment.currency_id || null,
+        live_mode: Boolean(payment.live_mode)
+      },
+      transacao_local: transaction ? {
+        id: transaction.id,
+        invoice_id: transaction.invoice_id,
+        payment_id: transaction.payment_id,
+        status: transaction.status,
+        amount: Number(transaction.amount),
+        valor_confere: Math.round(Number(transaction.amount) * 100) === Math.round(Number(payment.transaction_amount) * 100),
+        referencia_confere: payment.external_reference === `vortexgrid-invoice-${transaction.invoice_id}`
+      } : null,
+      fatura_local: invoice ? {
+        id: invoice.id,
+        amount: Number(invoice.amount),
+        status: invoice.status,
+        description: invoice.description
+      } : null,
+      diagnostico: !transaction
+        ? 'Pagamento existe no Mercado Pago, mas não foi encontrada transação local com esse payment_id.'
+        : !invoice
+          ? 'Transação local encontrada, mas a fatura vinculada não foi encontrada.'
+          : 'Consulta concluída; nenhum dado foi alterado.'
+    });
+  } catch (e) {
+    console.error('Erro diagnóstico Mercado Pago:', e.message || e.code || 'erro');
+    return erro(res, 502, 'Não foi possível consultar o pagamento no Mercado Pago. Confira o log da aplicação.');
+  }
+});
+
 app.get('/api/webhooks/mercadopago', (req, res) => {
   res.set('Cache-Control', 'no-store');
   return res.status(405).json({
