@@ -1,7 +1,7 @@
 # DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
-PassengerAppRoot "/home/bsdevfnk/domains/bsdev.shop/public_html"
+PassengerAppRoot "/home/bsdevfnk/domains/vortexgrid.com.br/public_html/vortexgrid"
 PassengerBaseURI "/"
-PassengerNodejs "/home/bsdevfnk/nodevenv/domains/bsdev.shop/public_html/20/bin/node"
+PassengerNodejs "/home/bsdevfnk/nodevenv/domains/vortexgrid.com.br/public_html/vortexgrid/20/bin/node"
 PassengerAppType node
 PassengerStartupFile src/server.js
 # DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
