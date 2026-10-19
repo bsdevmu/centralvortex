@@ -3146,6 +3146,145 @@ app.get('/api/admin/mercadopago/diagnostico/:paymentId', autenticado, somenteAdm
   }
 });
 
+// --------------------------------------------------
+// MERCADO PAGO — CONCILIAÇÃO MANUAL VALIDADA (ADMIN)
+// Revalida o pagamento diretamente na API antes de registrar
+// o recebimento. Operação idempotente por referência do pagamento.
+// --------------------------------------------------
+app.post('/api/admin/mercadopago/conciliar/:paymentId', autenticado, somenteAdmin, async (req, res) => {
+  const paymentId = typeof req.params.paymentId === 'string'
+    ? req.params.paymentId.trim()
+    : '';
+
+  if (!/^\\d{1,30}$/.test(paymentId)) {
+    return erro(res, 400, 'ID de pagamento inválido.');
+  }
+
+  if (!process.env.MP_ACCESS_TOKEN) {
+    return erro(res, 503, 'Mercado Pago não configurado: falta MP_ACCESS_TOKEN no ambiente.');
+  }
+
+  let conn;
+  try {
+    await garantirTabelaMercadoPago();
+
+    // A fonte de verdade é consultada ao vivo; não confiamos no diagnóstico anterior.
+    const payment = await mercadoPagoRequest(
+      `${MP_API_BASE}/v1/payments/${encodeURIComponent(paymentId)}`,
+      { method: 'GET' }
+    );
+
+    if (String(payment.id) !== paymentId) {
+      return erro(res, 409, 'O ID retornado pelo Mercado Pago não corresponde ao solicitado.');
+    }
+
+    if (payment.status !== 'approved' || payment.status_detail !== 'accredited') {
+      return erro(res, 409, 'O Mercado Pago ainda não confirma este pagamento como aprovado e creditado.');
+    }
+
+    if (payment.currency_id !== 'BRL' || !payment.live_mode) {
+      return erro(res, 409, 'O pagamento não pertence ao ambiente de produção em BRL.');
+    }
+
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const [transactionRows] = await conn.query(
+      `SELECT id, invoice_id, payment_id, status, amount
+       FROM mercadopago_transactions
+       WHERE payment_id = ?
+       LIMIT 1
+       FOR UPDATE`,
+      [paymentId]
+    );
+    const local = transactionRows[0];
+
+    if (!local) {
+      await conn.rollback();
+      return erro(res, 404, 'Não existe transação local para este pagamento. Nenhum dado foi alterado.');
+    }
+
+    const expectedAmount = Number(local.amount);
+    const paidAmount = Number(payment.transaction_amount);
+    const expectedReference = `vortexgrid-invoice-${local.invoice_id}`;
+
+    if (
+      payment.external_reference !== expectedReference ||
+      !Number.isFinite(paidAmount) ||
+      !Number.isFinite(expectedAmount) ||
+      Math.round(paidAmount * 100) !== Math.round(expectedAmount * 100)
+    ) {
+      await conn.rollback();
+      return erro(res, 409, 'O valor ou a referência do pagamento não corresponde à transação local.');
+    }
+
+    const [invoiceRows] = await conn.query(
+      'SELECT id, amount, status FROM invoices WHERE id = ? FOR UPDATE',
+      [local.invoice_id]
+    );
+    const invoice = invoiceRows[0];
+
+    if (
+      !invoice ||
+      Math.round(Number(invoice.amount) * 100) !== Math.round(expectedAmount * 100)
+    ) {
+      await conn.rollback();
+      return erro(res, 409, 'A fatura não corresponde ao valor confirmado pelo Mercado Pago.');
+    }
+
+    await conn.query(
+      'UPDATE mercadopago_transactions SET status = ? WHERE payment_id = ?',
+      ['approved', paymentId]
+    );
+
+    const [existingPayments] = await conn.query(
+      'SELECT id FROM payments WHERE reference = ? LIMIT 1',
+      [`mercadopago:${paymentId}`]
+    );
+
+    let paymentRecorded = false;
+    if (!existingPayments.length) {
+      await conn.query(
+        'INSERT INTO payments (invoice_id, amount, method, reference) VALUES (?, ?, ?, ?)',
+        [local.invoice_id, expectedAmount, 'mercadopago_pix', `mercadopago:${paymentId}`]
+      );
+      paymentRecorded = true;
+    }
+
+    await conn.query(
+      "UPDATE invoices SET status = 'paid' WHERE id = ?",
+      [local.invoice_id]
+    );
+
+    await conn.commit();
+
+    console.info('Conciliação manual Mercado Pago concluída.', {
+      paymentId,
+      invoiceId: local.invoice_id,
+      paymentRecorded
+    });
+
+    return res.set('Cache-Control', 'no-store').json({
+      conciliado: true,
+      payment_id: paymentId,
+      invoice_id: Number(local.invoice_id),
+      status_mercado_pago: payment.status,
+      status_transacao_local: 'approved',
+      status_fatura: 'paid',
+      recebimento_novo: paymentRecorded,
+      mensagem: paymentRecorded
+        ? 'Pagamento validado e recebimento registrado; fatura marcada como paga.'
+        : 'Pagamento já estava registrado; fatura confirmada como paga sem duplicar o recebimento.'
+    });
+  } catch (e) {
+    if (conn) await conn.rollback().catch(() => {});
+    console.error('Erro conciliação manual Mercado Pago:', e.message || e.code || 'erro');
+    return erro(res, 500, 'Não foi possível conciliar o pagamento. Nenhuma confirmação deve ser presumida.');
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.get('/api/webhooks/mercadopago', (req, res) => {
   res.set('Cache-Control', 'no-store');
   return res.status(405).json({
