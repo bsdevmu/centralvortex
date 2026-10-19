@@ -372,7 +372,7 @@ app.get('/api/me', autenticado, (req, res) => {
 // DASHBOARD
 // --------------------------------------------------
 
-app.get('/api/dashboard', autenticado, async (req, res) => {
+app.get('/api/dashboard', autenticado, somenteAdmin, async (req, res) => {
   try {
     const [[clientes]] = await db.query(
       `SELECT COUNT(*) AS total
@@ -605,7 +605,7 @@ app.post('/api/users', autenticado, somenteAdmin, async (req, res) => {
 // CLIENTES — LISTAR E PESQUISAR
 // --------------------------------------------------
 
-app.get('/api/clients', autenticado, async (req, res) => {
+app.get('/api/clients', autenticado, somenteAdmin, async (req, res) => {
   try {
     const q = typeof req.query.q === 'string'
       ? req.query.q.trim().slice(0, 190)
@@ -688,7 +688,7 @@ app.post('/api/clients', autenticado, async (req, res) => {
 // CLIENTES — EDITAR
 // --------------------------------------------------
 
-app.put('/api/clients/:id', autenticado, async (req, res) => {
+app.put('/api/clients/:id', autenticado, somenteAdmin, async (req, res) => {
   try {
     const id = validarId(req.params.id);
 
@@ -787,7 +787,7 @@ app.patch('/api/clients/:id/status', autenticado, somenteAdmin, async (req, res)
 // FICHA DO CLIENTE — DADOS, FINANCEIRO E SERVIÇOS
 // --------------------------------------------------
 
-app.get('/api/clients/:id/record', autenticado, async (req, res) => {
+app.get('/api/clients/:id/record', autenticado, somenteAdmin, async (req, res) => {
   try {
     const id = validarId(req.params.id);
 
@@ -2800,7 +2800,7 @@ app.post('/api/users/:id/password', autenticado, somenteAdmin, async (req, res) 
 // MINHA CONTA — ALTERAR PRÓPRIA SENHA
 // --------------------------------------------------
 
-app.post('/api/me/password', autenticado, async (req, res) => {
+app.post('/api/me/password', autenticado, somenteAdmin, async (req, res) => {
   try {
     const { current_password: atual, new_password: nova } = req.body;
 
