@@ -458,6 +458,11 @@
     const recebido = Number(data.recebidoMes ?? 0);
     const vencidas = Number(data.faturasVencidas ?? 0);
     const valorVencido = Number(data.valorVencido ?? 0);
+    const valorEmDia = Math.max(0, valorPendente - valorVencido);
+    const percentualVencido = valorPendente > 0
+      ? Math.min(100, Math.round((valorVencido / valorPendente) * 100))
+      : 0;
+    const percentualEmDia = 100 - percentualVencido;
     const solicitacoes = Number(data.solicitacoesPendentes ?? 0);
     const serie = Array.isArray(data.recebimentosMensais) ? data.recebimentosMensais : [];
     const faturas = Array.isArray(data.ultimasFaturas) ? data.ultimasFaturas : [];
@@ -566,6 +571,51 @@
           ? statCard('Solicitações pendentes', solicitacoes.toLocaleString('pt-BR'),
               'Pedidos de clientes aguardando análise', '✓')
           : ''}
+
+      </section>
+
+      <section class="content-card financial-overview" aria-labelledby="financial-overview-title">
+        <div class="panel-heading financial-overview-heading">
+          <div>
+            <span class="section-eyebrow">VISÃO FINANCEIRA</span>
+            <h2 id="financial-overview-title">Resumo financeiro</h2>
+            <p>Valores calculados a partir das faturas e dos pagamentos registrados.</p>
+          </div>
+          <button type="button" class="btn btn-small" data-page="finance">Abrir financeiro <span aria-hidden="true">→</span></button>
+        </div>
+
+        <div class="financial-summary-grid">
+          <div class="financial-summary-item">
+            <span class="financial-summary-label"><span class="financial-dot financial-dot-success"></span>Recebido neste mês</span>
+            <strong>${escapeHTML(money(recebido))}</strong>
+            <small>Pagamentos registrados no mês atual</small>
+          </div>
+          <div class="financial-summary-item">
+            <span class="financial-summary-label"><span class="financial-dot financial-dot-neutral"></span>Total em aberto</span>
+            <strong>${escapeHTML(money(valorPendente))}</strong>
+            <small>${pendentes.toLocaleString('pt-BR')} fatura(s) pendente(s) ou vencida(s)</small>
+          </div>
+          <div class="financial-summary-item">
+            <span class="financial-summary-label"><span class="financial-dot financial-dot-danger"></span>Valor vencido</span>
+            <strong>${escapeHTML(money(valorVencido))}</strong>
+            <small>${vencidas.toLocaleString('pt-BR')} fatura(s) com vencimento ultrapassado</small>
+          </div>
+        </div>
+
+        <div class="financial-composition">
+          <div class="financial-composition-heading">
+            <strong>Composição das cobranças em aberto</strong>
+            <span>${percentualVencido}% vencido</span>
+          </div>
+          <div class="financial-progress" role="img" aria-label="${percentualEmDia}% do valor em aberto não está vencido e ${percentualVencido}% está vencido">
+            <span class="financial-progress-current" style="width:${percentualEmDia}%"></span>
+            <span class="financial-progress-overdue" style="width:${percentualVencido}%"></span>
+          </div>
+          <div class="financial-legend">
+            <span><i class="financial-dot financial-dot-success"></i>Não vencido: ${escapeHTML(money(valorEmDia))}</span>
+            <span><i class="financial-dot financial-dot-danger"></i>Vencido: ${escapeHTML(money(valorVencido))}</span>
+          </div>
+        </div>
       </section>
 
       <section class="dashboard-grid">
