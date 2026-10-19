@@ -2937,28 +2937,38 @@ function validarAssinaturaMercadoPago(req) {
   const dataIdRaw = typeof req.query['data.id'] === 'string'
     ? req.query['data.id']
     : (typeof req.query.id === 'string' ? req.query.id : '');
-  const dataId = dataIdRaw.toLowerCase();
+  const dataId = dataIdRaw.trim().toLowerCase();
 
-  if (!segredo || !assinatura || !requestId || !dataId) return false;
+  if (!segredo) return { valida: false, motivo: 'segredo_ausente' };
+  if (!assinatura) return { valida: false, motivo: 'cabecalho_x_signature_ausente' };
+  if (!requestId) return { valida: false, motivo: 'cabecalho_x_request_id_ausente' };
+  if (!dataId) return { valida: false, motivo: 'parametro_data_id_ausente' };
 
-  const partes = Object.fromEntries(
-    assinatura.split(',').map(parte => {
-      const separador = parte.trim().indexOf('=');
-      return separador < 0
-        ? ['', '']
-        : [parte.trim().slice(0, separador), parte.trim().slice(separador + 1)];
-    }).filter(([chave, valor]) => chave && valor)
-  );
-  if (!partes.ts || !partes.v1) return false;
+  const partes = {};
+  for (const parte of assinatura.split(',')) {
+    const separador = parte.indexOf('=');
+    if (separador < 1) continue;
+    const chave = parte.slice(0, separador).trim();
+    const valor = parte.slice(separador + 1).trim();
+    if (chave && valor) partes[chave] = valor;
+  }
+
+  if (!partes.ts || !partes.v1 || !/^[a-f0-9]{64}$/i.test(partes.v1)) {
+    return { valida: false, motivo: 'formato_x_signature_invalido' };
+  }
 
   const manifesto = `id:${dataId};request-id:${requestId};ts:${partes.ts};`;
-  const esperado = crypto.createHmac('sha256', segredo).update(manifesto).digest('hex');
+  const esperado = crypto.createHmac('sha256', segredo).update(manifesto).digest();
   const recebidoBuffer = Buffer.from(partes.v1, 'hex');
-  const esperadoBuffer = Buffer.from(esperado, 'hex');
 
-  return recebidoBuffer.length === esperadoBuffer.length &&
-    recebidoBuffer.length > 0 &&
-    crypto.timingSafeEqual(recebidoBuffer, esperadoBuffer);
+  if (recebidoBuffer.length !== esperado.length) {
+    return { valida: false, motivo: 'assinatura_nao_confere' };
+  }
+
+  return {
+    valida: crypto.timingSafeEqual(recebidoBuffer, esperado),
+    motivo: 'assinatura_nao_confere'
+  };
 }
 
 app.post('/api/invoices/:id/mercadopago/pix', autenticado, somenteAdmin, async (req, res) => {
@@ -3298,8 +3308,10 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
     return erro(res, 503, 'Webhook Mercado Pago não configurado no servidor.');
   }
 
-  if (!validarAssinaturaMercadoPago(req)) {
-    console.warn('Webhook Mercado Pago rejeitado: assinatura inválida ou ausente.');
+  const resultadoAssinatura = validarAssinaturaMercadoPago(req);
+  if (!resultadoAssinatura.valida) {
+    // Registra apenas o motivo técnico; nunca registra token, segredo ou assinatura.
+    console.warn('Webhook Mercado Pago rejeitado na validação:', resultadoAssinatura.motivo);
     return erro(res, 401, 'Assinatura do webhook inválida.');
   }
 
