@@ -170,7 +170,7 @@
     if (loginView) loginView.hidden = true;
     if (app) app.hidden = false;
     updateUserInfo();
-    navigate('dashboard');
+    navigate(state.user?.role === 'admin' ? 'dashboard' : 'finance');
   }
 
   function updateUserInfo() {
@@ -195,10 +195,8 @@
 
     const isAdmin = state.user?.role === 'admin';
 
-    document.querySelectorAll(
-      '[data-page="users"], [data-page="orders"], [data-page="services"]'
-    ).forEach(el => {
-      el.hidden = !isAdmin;
+    document.querySelectorAll('[data-page]').forEach(el => {
+      el.hidden = isAdmin ? false : el.dataset.page !== 'finance';
     });
 
     const adminGroup = $('#users-nav');
@@ -321,6 +319,11 @@
     ];
 
     if (!allowed.includes(page)) page = 'dashboard';
+
+    if (state.user?.role !== 'admin' && page !== 'finance') {
+      notify('Operadores podem acessar apenas as faturas e cadastrar novos clientes.', true);
+      return;
+    }
 
     if (['orders', 'services'].includes(page) && state.user?.role !== 'admin') {
       notify('Esta área é restrita a administradores.', true);
@@ -1645,12 +1648,10 @@
       await api('/api/invoices/refresh-overdue', { method: 'POST' }).catch(() => {});
     }
 
-    const [clientsResult, invoicesResult] = await Promise.all([
-      api('/api/clients'),
-      api('/api/invoices')
-    ]);
+    const invoicesResult = await api('/api/invoices');
 
-    state.cache.clients = getArray(clientsResult, 'clients');
+    // Operadores não podem consultar a lista completa de clientes.
+    state.cache.clients = [];
     state.cache.invoices = getArray(invoicesResult, 'invoices');
 
     drawFinance();
@@ -1716,9 +1717,9 @@
       ${pageHeader('Financeiro',
         state.user?.role === 'admin'
           ? 'Acompanhe faturas, vencimentos e pagamentos.'
-          : 'Consulte faturas, vencimentos e pagamentos. Alterações financeiras são restritas a administradores.',
-        state.user?.role === 'admin' ? 'Nova fatura' : '',
-        'new-invoice')}
+          : 'Consulte as faturas e cadastre novos clientes. As demais operações são restritas ao administrador.',
+        state.user?.role === 'admin' ? 'Nova fatura' : 'Novo cliente',
+        state.user?.role === 'admin' ? 'new-invoice' : 'new-client')}
 
       <section class="stats-grid">
         ${statCard('Em aberto', money(sum(open)), `${open.length} fatura(s)`, '▤')}
