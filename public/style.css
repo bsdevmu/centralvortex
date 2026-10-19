@@ -3716,3 +3716,16 @@ dialog::backdrop {
     gap: 8px;
   }
 }
+
+
+/* DASHBOARD — ATIVIDADE RECENTE */
+.activity-center { margin-top: 22px; }
+.activity-count { display:inline-flex; align-items:center; justify-content:center; min-height:30px; padding:5px 11px; border:1px solid var(--border,#e5e7eb); border-radius:999px; color:var(--text-secondary,#6b7280); background:var(--surface-alt,#f8fafc); font-size:12px; font-weight:700; white-space:nowrap; }
+.activity-list { display:grid; gap:0; }
+.activity-row { display:grid; grid-template-columns:42px minmax(0,1fr) auto; align-items:center; gap:14px; padding:15px 0; border-top:1px solid var(--border,#e5e7eb); }
+.activity-marker { display:inline-flex; width:40px; height:40px; align-items:center; justify-content:center; border-radius:12px; background:var(--surface-alt,#f8fafc); color:var(--text-primary,#27272a); font-size:13px; font-weight:800; }
+.activity-marker-cliente { color:#7c3aed; background:#f3e8ff; } .activity-marker-pagamento { color:#047857; background:#d1fae5; font-size:11px; } .activity-marker-fatura { color:#1d4ed8; background:#dbeafe; } .activity-marker-ativacao { color:#b45309; background:#fef3c7; } .activity-marker-solicitacao { color:#6d28d9; background:#ede9fe; }
+.activity-main { min-width:0; } .activity-title-line { display:flex; flex-wrap:wrap; align-items:center; gap:8px; } .activity-title-line > strong { overflow-wrap:anywhere; font-size:13px; font-weight:750; } .activity-main p { margin:4px 0 0; color:var(--text-secondary,#6b7280); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.activity-type { display:inline-flex; align-items:center; padding:3px 7px; border-radius:6px; background:var(--surface-alt,#f8fafc); color:var(--text-secondary,#6b7280); font-size:10px; font-weight:750; white-space:nowrap; } .activity-type-pagamento { color:#047857; background:#d1fae5; } .activity-type-cliente { color:#6d28d9; background:#f3e8ff; } .activity-type-ativacao { color:#92400e; background:#fef3c7; }
+.activity-side { display:flex; align-items:center; justify-content:flex-end; gap:12px; } .activity-side > strong { font-size:13px; white-space:nowrap; }
+@media (max-width:720px) { .activity-row { grid-template-columns:36px minmax(0,1fr); gap:10px; padding:13px 0; } .activity-marker { width:36px; height:36px; border-radius:10px; } .activity-side { grid-column:2; justify-content:space-between; padding-top:2px; } }
