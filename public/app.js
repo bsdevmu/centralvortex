@@ -451,6 +451,8 @@
 
     const clientes = Number(data.clientes ?? 0);
     const servicos = Number(data.servicos ?? 0);
+    const servicosCatalogo = Number(data.servicosCatalogo ?? 0);
+    const ativacoesPendentes = Number(data.ativacoesPendentes ?? 0);
     const pendentes = Number(data.faturasPendentes ?? 0);
     const valorPendente = Number(data.valorPendente ?? 0);
     const recebido = Number(data.recebidoMes ?? 0);
@@ -467,18 +469,22 @@
         `Olá, ${state.user?.name || 'Administrador'}. Estes são os principais indicadores da operação.`
       )}
 
-      <section class="stats-grid">
+      <section class="stats-grid ${isAdmin ? 'stats-grid-admin' : ''}">
         ${statCard('Recebido neste mês', money(recebido),
           'Pagamentos registrados no mês atual', 'R$')}
         ${statCard('Em aberto', money(valorPendente),
-          `${pendentes.toLocaleString('pt-BR')} fatura(s) pendente(s) ou vencida(s)`, '▤')}
+          `${pendentes.toLocaleString('pt-BR')} fatura(s); inclui as vencidas`, '▤')}
         ${statCard('Vencidas', money(valorVencido),
           `${vencidas.toLocaleString('pt-BR')} fatura(s) com vencimento ultrapassado`, '!')}
         ${isAdmin
-          ? statCard('Solicitações pendentes', solicitacoes.toLocaleString('pt-BR'),
-              'Pedidos de clientes aguardando análise', '✓')
+          ? statCard('Aguardando ativação', ativacoesPendentes.toLocaleString('pt-BR'),
+              'Contratos pendentes ou em provisionamento', '◷')
           : statCard('Clientes ativos', clientes.toLocaleString('pt-BR'),
               'Clientes com cadastro ativo', '♙')}
+        ${isAdmin
+          ? statCard('Solicitações pendentes', solicitacoes.toLocaleString('pt-BR'),
+              'Pedidos de clientes aguardando análise', '✓')
+          : ''}
       </section>
 
       <section class="dashboard-grid">
@@ -500,12 +506,14 @@
           <div class="panel-heading">
             <div>
               <h2>Operação</h2>
-              <p>Visão geral dos cadastros</p>
+              <p>Cadastros e serviços da operação</p>
             </div>
+            ${isAdmin ? '<button type="button" class="btn btn-small" data-page="services">Gerenciar serviços</button>' : ''}
           </div>
           <div class="mini-stats">
             <div><strong>${clientes.toLocaleString('pt-BR')}</strong><span>Clientes ativos</span></div>
-            <div><strong>${servicos.toLocaleString('pt-BR')}</strong><span>Serviços ativos</span></div>
+            <div><strong>${servicos.toLocaleString('pt-BR')}</strong><span>Serviços contratados ativos</span></div>
+            ${isAdmin ? `<div><strong>${servicosCatalogo.toLocaleString('pt-BR')}</strong><span>Itens ativos no catálogo</span></div>` : ''}
             ${isAdmin ? `<div><strong>${Number(data.usuarios ?? 0).toLocaleString('pt-BR')}</strong><span>Usuários ativos</span></div>` : ''}
           </div>
         </article>
