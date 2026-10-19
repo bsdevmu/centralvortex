@@ -463,11 +463,92 @@
     const faturas = Array.isArray(data.ultimasFaturas) ? data.ultimasFaturas : [];
     const pedidos = Array.isArray(data.solicitacoesRecentes) ? data.solicitacoesRecentes : [];
 
+    const alertas = [];
+
+    if (vencidas > 0) {
+      alertas.push({
+        nivel: 'danger',
+        titulo: vencidas === 1 ? 'Fatura vencida' : 'Faturas vencidas',
+        descricao: `${vencidas.toLocaleString('pt-BR')} fatura(s) com vencimento ultrapassado · ${money(valorVencido)}`,
+        acao: 'Abrir financeiro',
+        pagina: 'finance'
+      });
+    }
+
+    const faturasNaoVencidas = Math.max(0, pendentes - vencidas);
+    if (faturasNaoVencidas > 0) {
+      alertas.push({
+        nivel: 'warning',
+        titulo: 'Cobranças em aberto',
+        descricao: `${faturasNaoVencidas.toLocaleString('pt-BR')} fatura(s) pendente(s) sem atraso identificado`,
+        acao: 'Ver faturas',
+        pagina: 'finance'
+      });
+    }
+
+    if (isAdmin && ativacoesPendentes > 0) {
+      alertas.push({
+        nivel: 'info',
+        titulo: 'Ativações aguardando andamento',
+        descricao: `${ativacoesPendentes.toLocaleString('pt-BR')} serviço(s) pendente(s) ou em provisionamento`,
+        acao: 'Gerenciar serviços',
+        pagina: 'services'
+      });
+    }
+
+    if (isAdmin && solicitacoes > 0) {
+      alertas.push({
+        nivel: 'warning',
+        titulo: 'Solicitações aguardando análise',
+        descricao: `${solicitacoes.toLocaleString('pt-BR')} pedido(s) aguardando decisão administrativa`,
+        acao: 'Analisar solicitações',
+        pagina: 'orders'
+      });
+    }
+
+    const alertasMarkup = alertas.length
+      ? `
+        <section class="alert-center content-card" aria-labelledby="alert-center-title">
+          <div class="panel-heading">
+            <div>
+              <span class="section-eyebrow">CENTRAL DE ATENÇÃO</span>
+              <h2 id="alert-center-title">Pontos que precisam de atenção</h2>
+              <p>Prioridades identificadas a partir dos registros atuais do sistema.</p>
+            </div>
+            <span class="alert-count">${alertas.length} ${alertas.length === 1 ? 'alerta' : 'alertas'}</span>
+          </div>
+          <div class="alert-list">
+            ${alertas.map(alerta => `
+              <article class="dashboard-alert dashboard-alert-${alerta.nivel}">
+                <span class="dashboard-alert-symbol" aria-hidden="true">${alerta.nivel === 'danger' ? '!' : alerta.nivel === 'warning' ? '◷' : '↗'}</span>
+                <div class="dashboard-alert-copy">
+                  <strong>${escapeHTML(alerta.titulo)}</strong>
+                  <p>${escapeHTML(alerta.descricao)}</p>
+                </div>
+                <button type="button" class="btn btn-small" data-page="${escapeHTML(alerta.pagina)}">${escapeHTML(alerta.acao)} <span aria-hidden="true">→</span></button>
+              </article>
+            `).join('')}
+          </div>
+        </section>
+      `
+      : `
+        <section class="alert-center content-card alert-center-clear" aria-label="Status operacional">
+          <span class="alert-clear-icon" aria-hidden="true">✓</span>
+          <div>
+            <strong>Nenhum alerta prioritário identificado</strong>
+            <p>Não há cobranças em atraso ou pendências operacionais nos indicadores consultados.</p>
+          </div>
+          <span class="alert-count">Operação monitorada</span>
+        </section>
+      `;
+
     content.innerHTML = `
       ${pageHeader(
         'Visão geral',
         `Olá, ${state.user?.name || 'Administrador'}. Estes são os principais indicadores da operação.`
       )}
+
+      ${alertasMarkup}
 
       <section class="stats-grid ${isAdmin ? 'stats-grid-admin' : ''}">
         ${statCard('Recebido neste mês', money(recebido),
