@@ -860,10 +860,22 @@ app.get('/api/clients/:id/record', autenticado, async (req, res) => {
       amount: Number(payment.amount || 0)
     }));
 
-    const servicosContratados = contractedServiceRows.map(service => ({
-      ...service,
-      sale_price: Number(service.sale_price || 0)
-    }));
+    const isAdmin = req.session.user.role === 'admin';
+    const servicosContratados = contractedServiceRows.map(service => {
+      const item = {
+        ...service,
+        sale_price: Number(service.sale_price || 0)
+      };
+
+      // Operadores consultam os dados operacionais básicos, sem referências
+      // ou observações internas vinculadas ao serviço contratado.
+      if (!isAdmin) {
+        delete item.external_reference;
+        delete item.notes;
+      }
+
+      return item;
+    });
 
     const totals = {
       invoiceCount: invoices.length,
