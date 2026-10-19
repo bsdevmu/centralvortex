@@ -63,12 +63,49 @@ function valorMonetario(valor) {
   return Number.isFinite(n) && n >= 0 && n <= 999999999;
 }
 
-function autenticado(req, res, next) {
+async function autenticado(req, res, next) {
   if (!req.session || !req.session.user) {
     return erro(res, 401, 'Faça login para continuar.');
   }
 
-  next();
+  try {
+    // Revalida o usuário e o perfil no banco para que mudanças de acesso
+    // tenham efeito sem depender de um novo login ou esperar a sessão expirar.
+    const [rows] = await db.query(
+      'SELECT id, name, email, role, active FROM users WHERE id = ? LIMIT 1',
+      [req.session.user.id]
+    );
+
+    const user = rows[0];
+
+    if (!user || !normalizarBooleano(user.active, false)) {
+      return req.session.destroy(() => {
+        res.clearCookie('vortexgrid.sid', {
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: 'auto',
+          path: '/'
+        });
+        return erro(res, 401, 'Sua conta está inativa ou não existe mais. Faça login novamente.');
+      });
+    }
+
+    if (!['admin', 'staff'].includes(user.role)) {
+      return erro(res, 403, 'O perfil desta conta não possui permissões válidas.');
+    }
+
+    req.session.user = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    };
+
+    return next();
+  } catch (e) {
+    console.error('Erro ao validar sessão:', e.code || e.message || 'erro');
+    return erro(res, 503, 'Não foi possível validar seu acesso neste momento.');
+  }
 }
 
 function somenteAdmin(req, res, next) {
