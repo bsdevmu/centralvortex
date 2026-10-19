@@ -648,7 +648,7 @@
               <p>Pagamentos registrados nos últimos 6 meses</p>
             </div>
             <div class="quick-actions">
-              <button type="button" class="btn btn-small" data-action="new-invoice">+ Nova fatura</button>
+              ${isAdmin ? '<button type="button" class="btn btn-small" data-action="new-invoice">+ Nova fatura</button>' : ''}
               <button type="button" class="btn btn-small" data-action="new-client">+ Novo cliente</button>
             </div>
           </div>
@@ -1019,7 +1019,7 @@
       <section class="content-card" style="margin-top:18px">
         <div class="panel-heading">
           <div><h2>Histórico de faturas</h2><p>Faturas vinculadas a este cliente.</p></div>
-          <button type="button" class="btn btn-primary" data-action="new-invoice-for-client" data-id="${escapeHTML(client.id)}">+ Nova fatura</button>
+          ${state.user?.role === 'admin' ? `<button type="button" class="btn btn-primary" data-action="new-invoice-for-client" data-id="${escapeHTML(client.id)}">+ Nova fatura</button>` : ''}
         </div>
         ${table(
           ['ID', 'Descrição', 'Valor', 'Vencimento', 'Status', 'Criada em', 'Ação'],
@@ -1030,7 +1030,7 @@
             date(invoice.due_date),
             statusLabel(invoice.status),
             date(invoice.created_at),
-            invoice.status !== 'paid' && invoice.status !== 'cancelled' ? `
+            state.user?.role === 'admin' && invoice.status !== 'paid' && invoice.status !== 'cancelled' ? `
               <button type="button" class="btn btn-small" data-action="pay-invoice-from-record" data-id="${escapeHTML(invoice.id)}">Registrar pagamento</button>
             ` : '—'
           ])
