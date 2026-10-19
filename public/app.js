@@ -2934,12 +2934,26 @@
   if(globalSearchInput&&globalSearchResults){globalSearchInput.addEventListener('input',()=>{clearTimeout(globalSearchTimer);const q=globalSearchInput.value.trim(),id=++globalSearchRequest;globalSearchInput.setAttribute('aria-expanded','true');if(q.length<2){globalSearchResults.innerHTML='<div class="global-search-message">Digite pelo menos 2 caracteres.</div>';globalSearchResults.hidden=false;return;}globalSearchTimer=setTimeout(()=>runGlobalSearch(q,id),220);});globalSearchInput.addEventListener('focus',()=>{if(globalSearchInput.value.trim().length<2){globalSearchResults.innerHTML='<div class="global-search-message">Busque clientes, serviços e faturas.</div>';globalSearchResults.hidden=false;}});}
   if(globalSearchInput&&globalSearchResults){
     globalSearchInput.addEventListener('keydown',event=>{
-      if(!['ArrowDown','ArrowUp'].includes(event.key)) return;
       const results=[...globalSearchResults.querySelectorAll('.global-search-result')];
-      if(!results.length) return;
+      if(event.key==='Enter' && !globalSearchResults.hidden && results.length){
+        event.preventDefault();
+        results[0].click();
+        return;
+      }
+      if(event.key==='Escape'){
+        closeGlobalSearch();
+        return;
+      }
+      if(!['ArrowDown','ArrowUp'].includes(event.key) || !results.length) return;
       event.preventDefault();
       if(event.key==='ArrowDown') results[0].focus();
       else results[results.length-1].focus();
+    });
+    globalSearchResults.addEventListener('focusin',event=>{
+      const focused=event.target.closest('.global-search-result');
+      globalSearchResults.querySelectorAll('.global-search-result').forEach(item=>{
+        item.setAttribute('aria-selected',String(item===focused));
+      });
     });
     globalSearchResults.addEventListener('keydown',event=>{
       const item=event.target.closest('.global-search-result');
