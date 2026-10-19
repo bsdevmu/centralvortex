@@ -4014,3 +4014,98 @@ tbody tr:hover { background: rgba(255,255,255,.58); }
   .content { padding-right: 11px; padding-left: 11px; }
   .stats-grid, .stats-grid-admin { grid-template-columns: 1fr; }
 }
+
+
+/* =========================================================
+   CENTRAL — REFINO DE USABILIDADE DO DASHBOARD
+   ========================================================= */
+.page-header {
+  align-items: center;
+  margin-bottom: 22px;
+}
+.page-header .btn[data-action="refresh-dashboard"] {
+  min-height: 39px;
+  border-color: #aeb6bf;
+  background: linear-gradient(180deg, #f7f8f9 0%, #dfe3e7 100%);
+  color: #343b43;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 2px 5px rgba(35,42,49,.07);
+}
+.page-header .btn[data-action="refresh-dashboard"]:hover {
+  border-color: #8f98a3;
+  background: linear-gradient(180deg, #fff 0%, #d7dce1 100%);
+}
+.page-header .btn[data-action="refresh-dashboard"] span {
+  display: inline-block;
+  font-size: 17px;
+  line-height: 1;
+  transition: transform .2s ease;
+}
+.page-header .btn[data-action="refresh-dashboard"]:hover span {
+  transform: rotate(35deg);
+}
+.stats-grid {
+  align-items: stretch;
+}
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 152px;
+}
+.stat-card-top {
+  gap: 12px;
+}
+.stat-description {
+  margin-top: auto;
+  padding-top: 10px;
+  line-height: 1.55;
+}
+.dashboard-grid,
+.dashboard-grid-secondary {
+  align-items: stretch;
+}
+.dashboard-grid > .content-card,
+.dashboard-grid-secondary > .content-card {
+  min-width: 0;
+}
+.panel-heading {
+  gap: 16px;
+}
+.panel-heading > div {
+  min-width: 0;
+}
+.financial-summary-item,
+.activity-row,
+.list-row {
+  min-width: 0;
+}
+.btn:focus-visible,
+.nav-item:focus-visible,
+.quick-link:focus-visible,
+.mobile-menu-toggle:focus-visible {
+  outline: 2px solid #8d82ad;
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .page-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .page-header > div {
+    flex: 1 1 100%;
+  }
+  .page-header .btn {
+    width: 100%;
+  }
+  .stat-card {
+    min-height: 132px;
+  }
+  .panel-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .financial-overview-heading > .btn {
+    width: 100%;
+  }
+}
