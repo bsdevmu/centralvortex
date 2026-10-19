@@ -692,7 +692,7 @@ app.put('/api/clients/:id', autenticado, async (req, res) => {
 // CLIENTES — ATIVAR / INATIVAR
 // --------------------------------------------------
 
-app.patch('/api/clients/:id/status', autenticado, async (req, res) => {
+app.patch('/api/clients/:id/status', autenticado, somenteAdmin, async (req, res) => {
   try {
     const id = validarId(req.params.id);
     const { status } = req.body;
@@ -2437,7 +2437,7 @@ app.get('/api/invoices', autenticado, async (req, res) => {
   }
 });
 
-app.post('/api/invoices', autenticado, async (req, res) => {
+app.post('/api/invoices', autenticado, somenteAdmin, async (req, res) => {
   try {
     const {
       client_id,
@@ -2493,7 +2493,7 @@ app.post('/api/invoices', autenticado, async (req, res) => {
 // REGISTRAR PAGAMENTO INTEGRAL
 // --------------------------------------------------
 
-app.post('/api/invoices/:id/payments', autenticado, async (req, res) => {
+app.post('/api/invoices/:id/payments', autenticado, somenteAdmin, async (req, res) => {
   let conn;
 
   try {
@@ -2566,7 +2566,7 @@ app.post('/api/invoices/:id/payments', autenticado, async (req, res) => {
 // ATUALIZAR FATURAS VENCIDAS
 // --------------------------------------------------
 
-app.post('/api/invoices/refresh-overdue', autenticado, async (req, res) => {
+app.post('/api/invoices/refresh-overdue', autenticado, somenteAdmin, async (req, res) => {
   try {
     await db.query(`
       UPDATE invoices
@@ -2786,7 +2786,7 @@ app.post('/api/me/password', autenticado, async (req, res) => {
 // FATURAS — CANCELAR
 // --------------------------------------------------
 
-app.patch('/api/invoices/:id/cancel', autenticado, async (req, res) => {
+app.patch('/api/invoices/:id/cancel', autenticado, somenteAdmin, async (req, res) => {
   try {
     const id = validarId(req.params.id);
 
