@@ -5081,3 +5081,117 @@ a { transition: color .18s ease, opacity .18s ease; }
 @media(max-width:760px){#app-view .content{padding-top:21px}#app-view .content>.page-header{align-items:flex-start;flex-direction:column;padding-bottom:17px}#app-view .content>.page-header>.btn,#app-view .content>.page-header>button{width:100%}#app-view .stats-grid.stats-grid-admin,#app-view .stats-grid:not(.stats-grid-admin){grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}#app-view .stat-card{min-height:145px;padding:15px}#app-view .stat-label{font-size:10px}#app-view .stat-value,#app-view .stat-number{font-size:22px}#app-view .alert-center-clear{align-items:flex-start;flex-wrap:wrap}#app-view .alert-center-clear .alert-count{margin-left:50px}#app-view .activity-row{grid-template-columns:35px minmax(0,1fr);gap:10px}#app-view .activity-marker{width:34px;height:34px}#app-view .activity-side{grid-column:2;justify-content:space-between;align-items:center}#app-view .activity-side>button{margin-left:auto}#app-view .dashboard-grid>.content-card{padding:17px}#app-view .financial-summary-grid{gap:9px}}
 @media(max-width:420px){#app-view .stats-grid.stats-grid-admin,#app-view .stats-grid:not(.stats-grid-admin){grid-template-columns:minmax(0,1fr)}#app-view .stat-card{min-height:125px}#app-view .topbar-shortcut-button{white-space:normal}#app-view .alert-center .panel-heading{flex-direction:column}}
 @media(prefers-reduced-motion:reduce){#app-view *,#login-view *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+
+/* =========================================================
+   VORTEXGRID CENTRAL — FINAL PRODUCT POLISH
+   Consistência visual, acessibilidade e tabelas operacionais
+   ========================================================= */
+:root {
+  --focus-ring: 0 0 0 3px rgba(112, 71, 235, .22);
+}
+html { scroll-behavior: smooth; }
+body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 0;
+  box-shadow: var(--focus-ring);
+}
+#app-view .page-header { align-items: flex-start; gap: 20px; }
+#app-view .page-header h1 { letter-spacing: -.035em; }
+#app-view .page-header p { max-width: 760px; line-height: 1.65; }
+#app-view .content-card,
+#app-view .stat-card { min-width: 0; }
+#app-view .content-card { overflow-wrap: anywhere; }
+#app-view .table-wrapper {
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #c9cddd transparent;
+}
+#app-view table { width: 100%; border-collapse: separate; border-spacing: 0; }
+#app-view table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8f8fc;
+  color: #687087;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#app-view table tbody tr { transition: background-color .16s ease; }
+#app-view table tbody tr:hover { background: #faf9ff; }
+#app-view table td, #app-view table th { vertical-align: middle; }
+#app-view table td { line-height: 1.5; }
+#app-view .btn { transition: background-color .16s ease, border-color .16s ease, transform .16s ease, box-shadow .16s ease; }
+#app-view .btn:active { transform: translateY(1px); }
+#app-view .btn-primary { box-shadow: 0 3px 8px rgba(112, 71, 235, .15); }
+#app-view .form-group label,
+#app-view label { color: #41475a; font-weight: 650; }
+#app-view input:not([type="checkbox"]):not([type="radio"]),
+#app-view select,
+#app-view textarea {
+  min-height: 42px;
+  border-color: #dfe2ed;
+  border-radius: 10px;
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+#app-view input:focus,
+#app-view select:focus,
+#app-view textarea:focus {
+  border-color: #9a83f4;
+  box-shadow: 0 0 0 3px rgba(112, 71, 235, .12);
+  outline: 0;
+}
+#app-view .empty-state {
+  padding: 32px 22px;
+  border: 1px dashed #d9dceb;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #fcfcff, #f8f8fc);
+  color: #747c91;
+  text-align: center;
+  line-height: 1.7;
+}
+#app-view .modal,
+#app-view [role="dialog"] { overscroll-behavior: contain; }
+#app-view .activity-row,
+#app-view .list-row { min-width: 0; }
+#app-view .activity-main,
+#app-view .list-row-main { min-width: 0; }
+#app-view .activity-main p,
+#app-view .list-row small { overflow-wrap: anywhere; }
+#app-view .global-search-result[aria-selected="true"],
+#app-view .global-search-result:focus-visible {
+  background: #f3efff;
+  outline: 0;
+}
+#app-view .alert-center-highlight {
+  box-shadow: 0 0 0 4px rgba(112, 71, 235, .12), var(--shadow);
+}
+#app-view .status-badge,
+#app-view .badge { white-space: nowrap; }
+#login-view input:focus-visible,
+#login-view button:focus-visible { box-shadow: var(--focus-ring); }
+@media (max-width: 900px) {
+  #app-view .page-header { flex-direction: column; align-items: stretch; }
+  #app-view .page-header > button { align-self: flex-start; }
+  #app-view .financial-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #app-view .table-wrapper { margin-inline: -2px; }
+}
+@media (max-width: 620px) {
+  #app-view .financial-summary-grid { grid-template-columns: minmax(0, 1fr); }
+  #app-view .activity-row { grid-template-columns: auto minmax(0, 1fr); }
+  #app-view .activity-side { grid-column: 2; justify-content: space-between; flex-direction: row; align-items: center; }
+  #app-view .quick-actions { flex-wrap: wrap; }
+  #app-view .page-header h1 { font-size: clamp(24px, 7vw, 32px); }
+  #app-view .content-card { border-radius: 15px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
