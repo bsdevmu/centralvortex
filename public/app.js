@@ -2895,6 +2895,64 @@
     }
   });
 
+
+
+  // --------------------------------------------------
+  // DASHBOARD LAYOUT — COMPOSIÇÃO SAAS PREMIUM
+  // Reorganiza os blocos já renderizados sem duplicar dados
+  // nem alterar endpoints ou ações existentes.
+  // --------------------------------------------------
+  function arrangePremiumDashboard() {
+    const root = document.querySelector('#page-content');
+    if (!root || !root.querySelector('.stats-grid')) return;
+    if (root.querySelector('.vg-dashboard-layout')) return;
+
+    const header = root.querySelector(':scope > .page-header');
+    const alerts = root.querySelector(':scope > .alert-center');
+    const stats = root.querySelector(':scope > .stats-grid');
+    const finance = root.querySelector(':scope > .financial-overview');
+    const activity = root.querySelector(':scope > .activity-center');
+    const primary = root.querySelector(':scope > .dashboard-grid:not(.dashboard-grid-secondary)');
+    const secondary = root.querySelector(':scope > .dashboard-grid-secondary');
+    if (!header || !stats || !primary) return;
+
+    const layout = document.createElement('div');
+    layout.className = 'vg-dashboard-layout';
+    const intro = document.createElement('div');
+    intro.className = 'vg-dashboard-intro';
+    const main = document.createElement('div');
+    main.className = 'vg-dashboard-main';
+    const bottom = document.createElement('div');
+    bottom.className = 'vg-dashboard-bottom';
+
+    root.insertBefore(layout, header);
+    layout.appendChild(intro);
+    intro.appendChild(header);
+    intro.appendChild(stats);
+    if (alerts) layout.appendChild(alerts);
+    main.appendChild(primary);
+    layout.appendChild(main);
+    if (finance) layout.appendChild(finance);
+    if (activity) bottom.appendChild(activity);
+    if (secondary) {
+      Array.from(secondary.children).forEach(function (card) {
+        bottom.appendChild(card);
+      });
+      secondary.remove();
+    }
+    if (bottom.children.length) layout.appendChild(bottom);
+    root.classList.add('vg-dashboard-ready');
+  }
+
+  const dashboardLayoutObserver = new MutationObserver(function () {
+    arrangePremiumDashboard();
+  });
+  const dashboardLayoutRoot = document.querySelector('#page-content');
+  if (dashboardLayoutRoot) {
+    dashboardLayoutObserver.observe(dashboardLayoutRoot, { childList: true });
+    arrangePremiumDashboard();
+  }
+
   // --------------------------------------------------
   // INICIALIZAÇÃO
   // --------------------------------------------------
