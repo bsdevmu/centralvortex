@@ -5357,3 +5357,63 @@ body.premium-hybrid-metallic { background:#DFE3E7; }
   #login-view .login-panel { background:#F2F4F6; }
   #app-view .topbar { background:rgba(246,247,248,.97); }
 }
+
+
+/* =========================================================
+   VORTEXGRID CENTRAL — ACABAMENTO FINAL / QA VISUAL
+   Acessibilidade, foco, responsividade e interações previsíveis.
+   ========================================================= */
+.skip-link{
+  position:fixed;z-index:10000;top:12px;left:12px;
+  transform:translateY(-160%);padding:11px 16px;
+  border:1px solid #c6c0d1;border-radius:10px;
+  background:#f7f8f9;color:#252a30;font-weight:800;
+  box-shadow:0 8px 24px rgba(0,0,0,.2);
+}
+.skip-link:focus{transform:translateY(0);outline:3px solid #b9aecb;outline-offset:3px}
+#page-content:focus{outline:none}
+#app-view :where(button,a,input,select,textarea,[tabindex]):focus-visible,
+#login-view :where(button,a,input,select,textarea,[tabindex]):focus-visible{
+  outline:2px solid #8d82ad;outline-offset:3px;
+}
+#app-view .global-search-results{max-height:min(62vh,520px);overflow:auto;overscroll-behavior:contain}
+#app-view .global-search-result{width:100%;text-align:left}
+#app-view .global-search-result[aria-selected="true"]{background:#e6e2ec;box-shadow:inset 3px 0 #8d82ad}
+#app-view .global-search-message{padding:15px 16px;color:#69717a;font-size:12px;line-height:1.65}
+#app-view .notice{z-index:1100;max-width:min(560px,calc(100vw - 32px));overflow-wrap:anywhere}
+#app-view .btn:disabled,#app-view button:disabled{transform:none;box-shadow:none}
+#app-view .table-wrapper:focus-within{outline:2px solid rgba(141,130,173,.22);outline-offset:2px}
+#app-view .content-card,#app-view .stat-card,#app-view .table-wrapper{min-width:0}
+#app-view .content-card img{height:auto}
+#app-view .app-footer{gap:10px;flex-wrap:wrap}
+#login-view .login-story,#login-view .login-panel{min-width:0}
+#login-view input{max-width:100%}
+@media(max-width:760px){
+  #app-view .topbar-actions{min-width:0;max-width:100%;flex-wrap:wrap}
+  #app-view .global-search-wrap{width:min(100%,420px);min-width:0}
+  #app-view .global-search{width:100%}
+  #app-view .topbar-utility{max-width:100%;flex-wrap:wrap}
+  #app-view .user-chip{max-width:100%}
+  #app-view .content{overflow-x:clip}
+  #app-view .table-wrapper{max-width:calc(100vw - 28px)}
+  #login-view .login-shell{grid-template-columns:minmax(0,1fr);width:min(100%,560px)}
+  #login-view .login-story{padding:24px 20px}
+  #login-view .login-story-content h2{font-size:clamp(28px,7vw,40px)}
+  #login-view .login-story-features{gap:12px}
+  #login-view .login-panel{width:100%}
+}
+@media(max-width:420px){
+  #app-view .topbar-actions{gap:10px}
+  #app-view .topbar-utility{width:100%;justify-content:space-between}
+  #app-view .shortcuts-wrap{max-width:100%}
+  #app-view .topbar-shortcut-button{max-width:100%;font-size:11px}
+  #app-view .global-search input{min-width:0}
+  #app-view .user-chip{display:none}
+  #app-view .table-wrapper{font-size:12px}
+  #login-view .login-shell{padding:10px;gap:12px}
+  #login-view .login-story{padding:20px 16px}
+}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}
+}
