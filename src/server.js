@@ -2976,15 +2976,15 @@ app.post('/api/invoices/:id/paghiper/pix', autenticado, somenteAdmin, async (req
   try {
     const invoiceId = validarId(req.params.id);
     const cpf = typeof req.body.payer_cpf_cnpj === 'string'
-      ? req.body.payer_cpf_cnpj.replace(/\\D/g, '')
+      ? req.body.payer_cpf_cnpj.replace(/\D/g, '')
       : '';
     const phone = typeof req.body.payer_phone === 'string' || typeof req.body.payer_phone === 'number'
-      ? String(req.body.payer_phone).replace(/\\D/g, '')
+      ? String(req.body.payer_phone).replace(/\D/g, '')
       : '';
     const daysDue = req.body.days_due_date === undefined ? 1 : Number(req.body.days_due_date);
 
     if (!invoiceId) return erro(res, 400, 'Identificador da fatura inválido.');
-    if (!/^\\d{11}$|^\\d{14}$/.test(cpf)) {
+    if (!/^\d{11}$|^\d{14}$/.test(cpf)) {
       return erro(res, 400, 'Informe CPF ou CNPJ válido do pagador (somente números).');
     }
     if (phone && (phone.length < 10 || phone.length > 15)) {
@@ -3022,7 +3022,7 @@ app.post('/api/invoices/:id/paghiper/pix', autenticado, somenteAdmin, async (req
     }
 
     const orderId = `vg-inv-${invoice.id}-${Date.now()}`.slice(0, 64);
-    const notificationUrl = `${String(process.env.PUBLIC_BASE_URL || 'https://central.vortexgrid.com.br').replace(/\\/$/, '')}/api/webhooks/paghiper`;
+    const notificationUrl = `${String(process.env.PUBLIC_BASE_URL || 'https://central.vortexgrid.com.br').replace(/\/$/, '')}/api/webhooks/paghiper`;
     const payload = {
       apiKey: process.env.PAGHIPER_API_KEY,
       order_id: orderId,
