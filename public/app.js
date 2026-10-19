@@ -199,6 +199,10 @@
       el.hidden = isAdmin ? false : el.dataset.page !== 'finance';
     });
 
+    document.querySelectorAll('[data-action="my-account"]').forEach(el => {
+      el.hidden = !isAdmin;
+    });
+
     const adminGroup = $('#users-nav');
     if (adminGroup) adminGroup.hidden = !isAdmin;
   }
