@@ -1691,13 +1691,148 @@
       statusLabel(invoice.status),
       state.user?.role === 'admin' && open ? `
         <div class="quick-actions">
+          <button type="button" class="btn btn-small"
+            data-action="view-invoice" data-id="${id}">Ver fatura</button>
           <button type="button" class="btn btn-small btn-primary"
+            data-action="generate-pix" data-id="${id}">Gerar PIX</button>
+          <button type="button" class="btn btn-small"
             data-action="pay-invoice" data-id="${id}">Registrar pagamento</button>
           <button type="button" class="btn btn-small"
             data-action="cancel-invoice" data-id="${id}">Cancelar</button>
         </div>
-      ` : '—'
+      ` : `
+        <button type="button" class="btn btn-small"
+          data-action="view-invoice" data-id="${id}">Ver fatura</button>
+      `
     ];
+  }
+
+  function findInvoice(invoiceId) {
+    return state.cache.invoices.find(invoice => String(invoice.id) === String(invoiceId));
+  }
+
+  function viewInvoice(invoiceId) {
+    const invoice = findInvoice(invoiceId);
+    if (!invoice) {
+      notify('Fatura não encontrada na lista atual. Atualize a página e tente novamente.', true);
+      return;
+    }
+
+    const canGeneratePix = state.user?.role === 'admin' &&
+      ['pending', 'overdue'].includes(invoice.status);
+
+    const modalElement = ensureModal();
+    modalElement.innerHTML = `
+      <div class="modal-backdrop" data-action="close-modal"></div>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <h2 id="modal-title">Fatura #${escapeHTML(invoice.id)}</h2>
+          <button type="button" class="btn btn-small" data-action="close-modal">Fechar</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-field"><span>Cliente</span><strong>${escapeHTML(invoice.client_name || `Cliente #${invoice.client_id}`)}</strong></div>
+          <div class="form-field"><span>Descrição</span><strong>${escapeHTML(invoice.description || '—')}</strong></div>
+          <div class="form-field"><span>Valor</span><strong>${money(invoice.amount)}</strong></div>
+          <div class="form-field"><span>Vencimento</span><strong>${date(invoice.due_date)}</strong></div>
+          <div class="form-field"><span>Status</span><strong>${statusLabel(invoice.status)}</strong></div>
+          ${canGeneratePix ? `<p>Gere um PIX para esta fatura. A cobrança só será solicitada à PagHiper quando você confirmar o formulário de emissão.</p>` : ''}
+        </div>
+        <div class="modal-footer">
+          ${canGeneratePix ? `<button type="button" class="btn btn-primary" data-action="generate-pix" data-id="${escapeHTML(invoice.id)}">Gerar PIX</button>` : ''}
+          <button type="button" class="btn" data-action="close-modal">Fechar</button>
+        </div>
+      </section>
+    `;
+    modalElement.hidden = false;
+    modalElement.style.display = 'block';
+    modalElement.setAttribute('aria-hidden', 'false');
+  }
+
+  function showPixResult(result) {
+    const pixCode = typeof result.pix_code === 'string' ? result.pix_code : '';
+    const pixUrl = typeof result.pix_url === 'string' ? result.pix_url : '';
+    const safeUrl = /^https:\/\//i.test(pixUrl) ? pixUrl : '';
+    const modalElement = ensureModal();
+
+    modalElement.innerHTML = `
+      <div class="modal-backdrop" data-action="close-modal"></div>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <h2 id="modal-title">PIX emitido — Fatura #${escapeHTML(result.invoice_id)}</h2>
+          <button type="button" class="btn btn-small" data-action="close-modal">Fechar</button>
+        </div>
+        <div class="modal-body">
+          <p><strong>Valor:</strong> ${money(result.amount)}</p>
+          <p><strong>Status:</strong> Pendente de pagamento</p>
+          ${pixCode ? `
+            <label class="form-field">
+              <span>PIX copia e cola</span>
+              <textarea id="pix-copy-code" rows="5" readonly>${escapeHTML(pixCode)}</textarea>
+            </label>
+            <button type="button" class="btn btn-primary" data-action="copy-pix">Copiar código PIX</button>
+          ` : '<p>A PagHiper confirmou a emissão, mas não retornou o código copia e cola. Consulte o link da cobrança, se disponível.</p>'}
+          ${safeUrl ? `<p><a href="${escapeHTML(safeUrl)}" target="_blank" rel="noopener noreferrer">Abrir QR Code / cobrança PIX</a></p>` : ''}
+          <p>Guarde o código e confira o pagamento na área Financeiro. Nenhum pagamento foi marcado manualmente como recebido.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-action="close-modal">Fechar</button>
+        </div>
+      </section>
+    `;
+    modalElement.hidden = false;
+    modalElement.style.display = 'block';
+    modalElement.setAttribute('aria-hidden', 'false');
+  }
+
+  function generateInvoicePix(invoiceId) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem emitir PIX.', true);
+      return;
+    }
+
+    const invoice = findInvoice(invoiceId);
+    if (!invoice) {
+      notify('Fatura não encontrada na lista atual. Atualize a página e tente novamente.', true);
+      return;
+    }
+    if (!['pending', 'overdue'].includes(invoice.status)) {
+      notify('Somente faturas pendentes ou vencidas podem receber PIX.', true);
+      return;
+    }
+    if (Number(invoice.amount) < 3) {
+      notify('A PagHiper aceita PIX a partir de R$ 3,00. Esta fatura precisa ser corrigida antes da emissão.', true);
+      return;
+    }
+
+    openModal('Gerar PIX — Fatura #' + invoice.id, `
+      <p>Cliente: <strong>${escapeHTML(invoice.client_name || `Cliente #${invoice.client_id}`)}</strong></p>
+      <p>Descrição: <strong>${escapeHTML(invoice.description || 'Fatura VortexGrid')}</strong></p>
+      <p>Valor: <strong>${money(invoice.amount)}</strong></p>
+      <p>Ao confirmar, a solicitação será enviada à PagHiper e poderá criar uma cobrança PIX real.</p>
+      <label class="form-field"><span>CPF ou CNPJ do pagador (somente números)</span>
+        <input name="payer_cpf_cnpj" type="text" inputmode="numeric" autocomplete="off" pattern="(?:\\d{11}|\\d{14})" minlength="11" maxlength="14" placeholder="CPF com 11 ou CNPJ com 14 números" required>
+      </label>
+      <label class="form-field"><span>Telefone com DDD (opcional)</span>
+        <input name="payer_phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="DDD + número">
+      </label>
+      <label class="form-field"><span>Prazo de vencimento do PIX (dias)</span>
+        <input name="days_due_date" type="number" min="1" max="400" step="1" value="1" required>
+      </label>
+    `, async values => {
+      const result = await api(`/api/invoices/${encodeURIComponent(invoice.id)}/paghiper/pix`, {
+        method: 'POST',
+        body: JSON.stringify({
+          payer_cpf_cnpj: values.payer_cpf_cnpj,
+          payer_phone: values.payer_phone,
+          days_due_date: Number(values.days_due_date)
+        })
+      });
+      return result;
+    }, {
+      submitLabel: 'Confirmar e emitir PIX',
+      successMessage: 'PIX emitido pela PagHiper.',
+      onSuccess: result => showPixResult(result)
+    });
   }
 
   function drawFinance() {
@@ -2107,7 +2242,12 @@
       button.textContent = 'Salvando...';
 
       try {
-        await onSubmit(values);
+        const result = await onSubmit(values);
+        if (typeof options.onSuccess === 'function') {
+          await options.onSuccess(result, values);
+          return;
+        }
+
         closeModal();
         notify(successMessage);
 
@@ -2695,6 +2835,38 @@
         case 'pay-invoice':
           payInvoice(element.dataset.id);
           break;
+
+        case 'view-invoice':
+          viewInvoice(element.dataset.id);
+          break;
+
+        case 'generate-pix':
+          generateInvoicePix(element.dataset.id);
+          break;
+
+        case 'copy-pix': {
+          const codeField = $('#pix-copy-code');
+          const code = codeField?.value || '';
+          if (!code) {
+            notify('O código PIX não está disponível para copiar.', true);
+            break;
+          }
+          if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(code)
+              .then(() => notify('Código PIX copiado.'))
+              .catch(() => {
+                codeField.focus();
+                codeField.select();
+                notify('Selecione o código PIX e copie manualmente.', true);
+              });
+          } else {
+            codeField.focus();
+            codeField.select();
+            const copied = document.execCommand('copy');
+            notify(copied ? 'Código PIX copiado.' : 'Selecione o código PIX e copie manualmente.', !copied);
+          }
+          break;
+        }
 
         case 'close-modal':
           closeModal();
