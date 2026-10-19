@@ -11,7 +11,7 @@
     name="description"
     content="Central administrativa VortexGrid para gestão de clientes, serviços, operações e financeiro."
   >
-  <meta name="theme-color" content="#0b1020">
+  <meta name="theme-color" content="#f6f7fb">
   <meta name="color-scheme" content="light">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -121,7 +121,7 @@
   <div id="app-view" class="app-layout" hidden>
 
     <!-- Navegação lateral -->
-    <aside class="sidebar" aria-label="Navegação principal">
+    <aside id="sidebar" class="sidebar" aria-label="Navegação principal">
 
       <a href="#" class="brand" aria-label="VortexGrid Central">
         <span class="brand-mark small" aria-hidden="true">V</span>
@@ -245,10 +245,16 @@
 
     </aside>
 
+    <button type="button" id="sidebar-backdrop" class="sidebar-backdrop" aria-label="Fechar menu" hidden></button>
+
     <!-- Conteúdo principal -->
     <main class="main-area">
 
       <header class="topbar">
+
+        <button type="button" id="mobile-menu-toggle" class="mobile-menu-toggle" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
 
         <div class="topbar-heading">
           <p class="eyebrow">VORTEXGRID / CENTRAL</p>
@@ -306,6 +312,36 @@
 
   <script>
     (() => {
+      const menuButton = document.getElementById('mobile-menu-toggle');
+      const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+
+      const closeMenu = () => {
+        document.body.classList.remove('sidebar-open');
+        if (menuButton) {
+          menuButton.setAttribute('aria-expanded', 'false');
+          menuButton.setAttribute('aria-label', 'Abrir menu');
+        }
+        if (sidebarBackdrop) sidebarBackdrop.hidden = true;
+      };
+
+      if (menuButton && sidebarBackdrop) {
+        menuButton.addEventListener('click', () => {
+          const isOpen = document.body.classList.toggle('sidebar-open');
+          menuButton.setAttribute('aria-expanded', String(isOpen));
+          menuButton.setAttribute('aria-label', isOpen ? 'Fechar menu' : 'Abrir menu');
+          sidebarBackdrop.hidden = !isOpen;
+        });
+
+        sidebarBackdrop.addEventListener('click', closeMenu);
+        document.querySelectorAll('.sidebar [data-page]').forEach((item) => {
+          item.addEventListener('click', closeMenu);
+        });
+
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') closeMenu();
+        });
+      }
+
       const year = document.getElementById('current-year');
 
       if (year) {
