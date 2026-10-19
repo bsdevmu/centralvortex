@@ -189,11 +189,16 @@
       el.textContent = email;
     });
 
+    const isAdmin = state.user?.role === 'admin';
+
     document.querySelectorAll(
-      '[data-page="users"], [data-page="orders"]'
+      '[data-page="users"], [data-page="orders"], [data-page="services"]'
     ).forEach(el => {
-      el.hidden = state.user?.role !== 'admin';
+      el.hidden = !isAdmin;
     });
+
+    const adminGroup = $('#users-nav');
+    if (adminGroup) adminGroup.hidden = !isAdmin;
   }
 
   function setLoading(message = 'Carregando...') {
@@ -313,8 +318,8 @@
 
     if (!allowed.includes(page)) page = 'dashboard';
 
-    if (page === 'orders' && state.user?.role !== 'admin') {
-      notify('Apenas administradores podem analisar solicitações.', true);
+    if (['orders', 'services'].includes(page) && state.user?.role !== 'admin') {
+      notify('Esta área é restrita a administradores.', true);
       return;
     }
 
@@ -817,7 +822,7 @@
       `<div class="quick-actions">
         <button type="button" class="btn btn-small" data-action="client-record" data-id="${id}">Ficha</button>
         <button type="button" class="btn btn-small" data-action="edit-client" data-id="${id}">Editar</button>
-        <button type="button" class="btn btn-small" data-action="toggle-client" data-id="${id}" data-status="${inactive ? 'active' : 'inactive'}">${inactive ? 'Ativar' : 'Inativar'}</button>
+        ${state.user?.role === 'admin' ? `<button type="button" class="btn btn-small" data-action="toggle-client" data-id="${id}" data-status="${inactive ? 'active' : 'inactive'}">${inactive ? 'Ativar' : 'Inativar'}</button>` : ''}
       </div>`
     ];
   }
@@ -1631,8 +1636,10 @@
   // --------------------------------------------------
 
   async function renderFinance() {
-    // Garante que o status "vencido" esteja atualizado antes de listar.
-    await api('/api/invoices/refresh-overdue', { method: 'POST' }).catch(() => {});
+    // Somente administradores podem executar a atualização operacional dos vencimentos.
+    if (state.user?.role === 'admin') {
+      await api('/api/invoices/refresh-overdue', { method: 'POST' }).catch(() => {});
+    }
 
     const [clientsResult, invoicesResult] = await Promise.all([
       api('/api/clients'),
@@ -1673,7 +1680,7 @@
       money(invoice.amount),
       date(invoice.due_date),
       statusLabel(invoice.status),
-      open ? `
+      state.user?.role === 'admin' && open ? `
         <div class="quick-actions">
           <button type="button" class="btn btn-small btn-primary"
             data-action="pay-invoice" data-id="${id}">Registrar pagamento</button>
@@ -1703,8 +1710,11 @@
 
     content.innerHTML = `
       ${pageHeader('Financeiro',
-        'Acompanhe faturas, vencimentos e pagamentos.',
-        'Nova fatura', 'new-invoice')}
+        state.user?.role === 'admin'
+          ? 'Acompanhe faturas, vencimentos e pagamentos.'
+          : 'Consulte faturas, vencimentos e pagamentos. Alterações financeiras são restritas a administradores.',
+        state.user?.role === 'admin' ? 'Nova fatura' : '',
+        'new-invoice')}
 
       <section class="stats-grid">
         ${statCard('Em aberto', money(sum(open)), `${open.length} fatura(s)`, '▤')}
