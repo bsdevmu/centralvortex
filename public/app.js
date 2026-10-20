@@ -1088,7 +1088,7 @@
             'Próximo vencimento', 'Vinculado em', 'Ação'
           ],
           contractedServices.map(service => [
-            `<strong>${escapeHTML(service.name || 'Serviço')}</strong>${service.description ? `<div class="summary-footer">${escapeHTML(service.description)}</div>` : ''}`,
+            `<strong>${escapeHTML(service.name || 'Serviço')}</strong>`,
             escapeHTML(service.service_category || '—'),
             money(service.sale_price),
             escapeHTML({
