@@ -2181,8 +2181,14 @@
     if (!badge || state.user?.role !== 'admin') return;
 
     try {
-      const result = await api('/api/service-orders?status=pending');
-      const total = getArray(result, 'orders').length;
+      const [result, quoteResult] = await Promise.all([
+        api('/api/service-orders?status=pending'),
+        api('/api/quote-requests')
+      ]);
+      const pendingOrders = getArray(result, 'orders').length;
+      const pendingQuotes = getArray(quoteResult, 'quote_requests')
+        .filter(item => item.status === 'requested').length;
+      const total = pendingOrders + pendingQuotes;
 
       badge.textContent = total > 99 ? '99+' : String(total);
       badge.hidden = total === 0;
@@ -2300,12 +2306,12 @@
         ${table(['Nº', 'Cliente', 'Produto', 'Necessidade informada', 'Proposta', 'Validade', 'Status', 'Ação'],
           quotes.map(q => [
             escapeHTML(q.id),
-            `<strong>${escapeHTML(q.client_name)}</strong><br><small>${escapeHTML(q.client_email || '—')}</small>`,
+            `<strong>${escapeHTML(q.client_name)}</strong><br><small>${escapeHTML(q.client_email || 'E-mail não informado')}</small>${q.client_phone ? `<br><small>${escapeHTML(q.client_phone)}</small>` : ''}${q.client_email ? `<br><a class="text-action" href="mailto:${escapeHTML(q.client_email)}">Enviar e-mail</a>` : ''}${q.client_phone ? `<br><a class="text-action" href="https://wa.me/${escapeHTML(String(q.client_phone).replace(/\\D/g, ''))}" target="_blank" rel="noopener noreferrer">Contatar pelo WhatsApp</a>` : ''}`,
             escapeHTML(q.service_name),
             escapeHTML(q.customer_notes || 'Sem detalhes adicionais'),
             q.proposed_amount == null ? 'A definir' : `${money(q.proposed_amount)} · ${escapeHTML(cycleLabel(q.billing_cycle))}${q.proposal_notes ? `<br><small>${escapeHTML(q.proposal_notes)}</small>` : ''}`,
             escapeHTML(q.valid_until || '—'),
-            escapeHTML(({requested:'Aguardando orçamento',proposed:'Proposta enviada',accepted:'Aceito pelo cliente',declined:'Recusado pelo cliente',cancelled:'Cancelado'})[q.status] || q.status),
+            escapeHTML(({requested:'Novo pedido — entrar em contato',proposed:'Proposta enviada',accepted:'Aceito pelo cliente',declined:'Recusado pelo cliente',cancelled:'Cancelado'})[q.status] || q.status),
             q.status === 'requested' || q.status === 'proposed' ? `<button type="button" class="btn btn-small btn-primary" data-action="propose-quote" data-id="${escapeHTML(q.id)}">${q.status === 'proposed' ? 'Editar proposta' : 'Enviar proposta'}</button>` : '<small>Sem ações disponíveis</small>'
           ]))}
       </section>
