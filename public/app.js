@@ -2409,7 +2409,7 @@
           '<strong>'+escapeHTML(t.client_name || 'Cliente')+'</strong><br><small>'+escapeHTML(t.client_email || '—')+'</small>',
           escapeHTML(t.subject),
           '<span class="status">'+escapeHTML(ticketPriorityLabel(t.priority))+'</span>',
-          statusLabel(t.status),
+          '<span class="status status-'+escapeHTML(t.status)+'">'+escapeHTML(ticketStatusLabel(t.status))+'</span>',
           dateTime(t.last_message_at),
           escapeHTML(t.message_count || 0),
           '<button type="button" class="btn btn-small btn-primary" data-action="open-ticket" data-id="'+escapeHTML(t.id)+'">Atender</button>'
