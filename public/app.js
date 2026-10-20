@@ -1167,7 +1167,7 @@
           method: 'PATCH',
           body: JSON.stringify({ operational_status: values.operational_status, note: values.note })
         });
-        if (state.currentClientId) {
+        if (state.page === 'client-record' && state.currentClientId) {
           await openClientRecord(state.currentClientId);
         } else if (state.page === 'orders') {
           await renderOrders();
