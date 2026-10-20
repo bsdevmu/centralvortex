@@ -2789,24 +2789,62 @@ app.patch('/api/quote-requests/:id/workflow', autenticado, somenteAdmin, async (
       return erro(res, 400, 'Etapa operacional de orçamento inválida.');
     }
 
-    const [result] = await db.query(
-      `UPDATE quote_requests
-       SET workflow_status = ?
-       WHERE id = ? AND status = 'accepted'`,
-      [workflowStatus, id]
+    const [quotes] = await db.query(
+      `SELECT qr.id, qr.client_id, qr.service_id, qr.status,
+              qr.proposed_amount, qr.billing_cycle, qr.invoice_id,
+              s.name AS service_name
+       FROM quote_requests qr
+       JOIN services s ON s.id = qr.service_id
+       WHERE qr.id = ?
+       LIMIT 1`,
+      [id]
     );
+    if (!quotes.length) return erro(res, 404, 'Orçamento não encontrado.');
+    const quote = quotes[0];
+    if (quote.status !== 'accepted') {
+      return erro(res, 409, 'A etapa operacional só pode ser alterada após o cliente aceitar a proposta.');
+    }
 
-    if (!result.affectedRows) {
-      const [rows] = await db.query(
-        'SELECT id, status, workflow_status FROM quote_requests WHERE id = ? LIMIT 1',
-        [id]
-      );
-      if (!rows.length) return erro(res, 404, 'Orçamento não encontrado.');
-      if (rows[0].status !== 'accepted') {
-        return erro(res, 409, 'A etapa operacional só pode ser alterada após o cliente aceitar a proposta.');
+    let invoiceId = quote.invoice_id ? Number(quote.invoice_id) : null;
+
+    // A fatura só é criada quando o administrador libera o orçamento para faturamento.
+    // Repetir a ação não cria faturas duplicadas.
+    if (workflowStatus === 'ready_for_billing' && !invoiceId) {
+      const amount = Number(quote.proposed_amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return erro(res, 409, 'Este orçamento não tem um valor válido para faturamento.');
       }
-      if (rows[0].workflow_status !== workflowStatus) {
-        return erro(res, 409, 'Não foi possível confirmar a atualização da etapa.');
+
+      const description = ('Orçamento #' + id + ' — ' + (quote.service_name || 'Serviço VortexGrid')).slice(0, 500);
+      const [invoiceResult] = await db.query(
+        `INSERT INTO invoices (client_id, description, amount, status, due_date)
+         VALUES (?, ?, ?, 'pending', DATE_ADD(CURRENT_DATE, INTERVAL 1 DAY))`,
+        [quote.client_id, description, amount]
+      );
+      invoiceId = Number(invoiceResult.insertId);
+
+      await db.query(
+        `UPDATE quote_requests
+         SET workflow_status = ?, invoice_id = ?
+         WHERE id = ? AND status = 'accepted'`,
+        [workflowStatus, invoiceId, id]
+      );
+    } else {
+      const [result] = await db.query(
+        `UPDATE quote_requests
+         SET workflow_status = ?
+         WHERE id = ? AND status = 'accepted'`,
+        [workflowStatus, id]
+      );
+
+      if (!result.affectedRows) {
+        const [rows] = await db.query(
+          'SELECT workflow_status FROM quote_requests WHERE id = ? LIMIT 1',
+          [id]
+        );
+        if (!rows.length || rows[0].workflow_status !== workflowStatus) {
+          return erro(res, 409, 'Não foi possível confirmar a atualização da etapa.');
+        }
       }
     }
 
@@ -2815,12 +2853,16 @@ app.patch('/api/quote-requests/:id/workflow', autenticado, somenteAdmin, async (
       in_contracting: 'Em contratação',
       ready_for_billing: 'Pronto para faturamento'
     };
+    const mensagem = workflowStatus === 'ready_for_billing'
+      ? 'Orçamento liberado para faturamento. A fatura #' + invoiceId + ' foi disponibilizada no painel do cliente; nenhuma ativação foi criada.'
+      : 'Etapa atualizada para: ' + labels[workflowStatus] + '. Nenhuma fatura ou ativação foi criada.';
 
     return res.json({
       sucesso: true,
       id,
       workflow_status: workflowStatus,
-      mensagem: 'Etapa atualizada para: ' + labels[workflowStatus] + '. Nenhuma fatura ou ativação foi criada.'
+      invoice_id: workflowStatus === 'ready_for_billing' ? invoiceId : null,
+      mensagem
     });
   } catch (e) {
     console.error('Erro atualizar etapa do orçamento:', e.code || e.message || 'erro');
