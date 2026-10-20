@@ -2407,7 +2407,7 @@
         ${table(['Ticket','Cliente','Assunto','Prioridade','Status','Última mensagem','Mensagens','Ação'], list.map(t => [
           '<strong>#'+escapeHTML(t.id)+'</strong>',
           '<strong>'+escapeHTML(t.client_name || 'Cliente')+'</strong><br><small>'+escapeHTML(t.client_email || '—')+'</small>',
-          escapeHTML(t.subject),
+          '<strong>'+escapeHTML(t.subject)+'</strong><br><small>Serviço: '+escapeHTML(t.service_name || 'Não identificado')+'</small>',
           '<span class="status">'+escapeHTML(ticketPriorityLabel(t.priority))+'</span>',
           '<span class="status status-'+escapeHTML(t.status)+'">'+escapeHTML(ticketStatusLabel(t.status))+'</span>',
           dateTime(t.last_message_at),
@@ -2429,6 +2429,7 @@
         <button type="button" class="btn" data-action="tickets-back">← Voltar aos tickets</button></div>
       <section class="content-card" style="margin-bottom:18px">
         <div class="form-grid">
+          <div class="form-field"><label>Serviço relacionado</label><input value="${escapeHTML(ticket.service_name || 'Não identificado')}" disabled></div>
           <div class="form-field"><label for="ticket-status-select">Status</label><select id="ticket-status-select">
             ${[['open','Aberto'],['in_progress','Em atendimento'],['waiting_customer','Aguardando cliente'],['resolved','Resolvido'],['closed','Encerrado']].map(([v,l])=>'<option value="'+v+'" '+(ticket.status===v?'selected':'')+'>'+l+'</option>').join('')}
           </select></div>
