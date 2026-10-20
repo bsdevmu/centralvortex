@@ -79,7 +79,8 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
         SELECT t.id,t.client_id,t.contracted_service_id,t.subject,t.category,t.priority,t.status,t.assigned_to,
           t.created_at,t.updated_at,t.last_message_at,c.name AS client_name,c.email AS client_email,
           cs.name AS service_name,u.name AS assignee_name,
-          (SELECT COUNT(*) FROM support_ticket_messages m WHERE m.ticket_id=t.id) AS message_count
+          (SELECT COUNT(*) FROM support_ticket_messages m WHERE m.ticket_id=t.id) AS message_count,
+          (SELECT m.sender_type FROM support_ticket_messages m WHERE m.ticket_id=t.id ORDER BY m.created_at DESC,m.id DESC LIMIT 1) AS last_sender_type
         FROM support_tickets t
         LEFT JOIN clients c ON c.id=t.client_id
         LEFT JOIN contracted_services cs ON cs.id=t.contracted_service_id
@@ -138,7 +139,7 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
         const user = req.session.user;
         await connection.query("INSERT INTO support_ticket_messages(ticket_id,sender_type,sender_id,sender_name,message) VALUES(?,'staff',?,?,?)",
           [id, user.id, String(user.name || 'Equipe VortexGrid').slice(0,160), message]);
-        await connection.query("UPDATE support_tickets SET status='in_progress',last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?", [id]);
+        await connection.query("UPDATE support_tickets SET status='waiting_customer',last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?", [id]);
         await connection.commit();
       } catch (transactionError) {
         await connection.rollback();
