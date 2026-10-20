@@ -2798,11 +2798,16 @@ app.patch('/api/quote-requests/:id/workflow', autenticado, somenteAdmin, async (
 
     if (!result.affectedRows) {
       const [rows] = await db.query(
-        'SELECT id, status FROM quote_requests WHERE id = ? LIMIT 1',
+        'SELECT id, status, workflow_status FROM quote_requests WHERE id = ? LIMIT 1',
         [id]
       );
       if (!rows.length) return erro(res, 404, 'Orçamento não encontrado.');
-      return erro(res, 409, 'A etapa operacional só pode ser alterada após o cliente aceitar a proposta.');
+      if (rows[0].status !== 'accepted') {
+        return erro(res, 409, 'A etapa operacional só pode ser alterada após o cliente aceitar a proposta.');
+      }
+      if (rows[0].workflow_status !== workflowStatus) {
+        return erro(res, 409, 'Não foi possível confirmar a atualização da etapa.');
+      }
     }
 
     const labels = {
