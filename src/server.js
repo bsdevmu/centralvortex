@@ -13,6 +13,11 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const db = database;
 
+function categoriaExigeOrcamento(nome, nomePai = '') {
+  const normalizar = valor => String(valor || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLocaleLowerCase('pt-BR');
+  return [normalizar(nome), normalizar(nomePai)].some(valor => /\\bempresas\\b|\\bsistemas\\b|gestao comercial|\\bsmartpos\\b/.test(valor));
+}
+
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
@@ -2305,6 +2310,7 @@ app.post('/api/services', autenticado, somenteAdmin, async (req, res) => {
       }
 
       category = catRows[0].name;
+      pricingMode = categoriaExigeOrcamento(catRows[0].name, catRows[0].parent_name) ? 'quote' : 'fixed';
     }
 
     const region = textoOpcional(body.region, 100);
@@ -2312,6 +2318,7 @@ app.post('/api/services', autenticado, somenteAdmin, async (req, res) => {
     const badge = textoOpcional(body.badge, 80);
     const price = Number(body.price);
     const billingCycle = body.billing_cycle || 'monthly';
+    let pricingMode = 'fixed';
     const specifications = normalizarEspecificacoes(body.specifications);
 
     const supplierProductId = body.supplier_product_id
@@ -2372,6 +2379,7 @@ app.post('/api/services', autenticado, somenteAdmin, async (req, res) => {
           category,
           category_id,
           price,
+          pricing_mode,
           billing_cycle,
           slug,
           short_description,
@@ -2385,13 +2393,14 @@ app.post('/api/services', autenticado, somenteAdmin, async (req, res) => {
           internal_notes,
           active
         )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         description,
         category,
         categoryId,
         price,
+        pricingMode,
         billingCycle,
         slug,
         shortDescription,
@@ -2568,9 +2577,10 @@ app.put('/api/services/:id', autenticado, somenteAdmin, async (req, res) => {
         body[key] !== ''
       ) {
         const [catRows] = await db.query(
-          `SELECT name
-           FROM service_categories
-           WHERE id = ? AND active = 1
+          `SELECT c.name, p.name AS parent_name
+           FROM service_categories c
+           LEFT JOIN service_categories p ON p.id = c.parent_id
+           WHERE c.id = ? AND c.active = 1
            LIMIT 1`,
           [Number(body[key])]
         );
@@ -2585,6 +2595,8 @@ app.put('/api/services/:id', autenticado, somenteAdmin, async (req, res) => {
 
         updates.push('category = ?');
         values.push(catRows[0].name);
+        updates.push('pricing_mode = ?');
+        values.push(categoriaExigeOrcamento(catRows[0].name, catRows[0].parent_name) ? 'quote' : 'fixed');
       }
 
       updates.push(`${field.column} = ?`);
@@ -2691,6 +2703,73 @@ app.patch(
 );
 
 // --------------------------------------------------
+// --------------------------------------------------
+// ORÇAMENTOS PERSONALIZADOS — ADMINISTRAR
+// --------------------------------------------------
+app.get('/api/quote-requests', autenticado, somenteAdmin, async (req, res) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : '';
+    const allowed = ['requested', 'proposed', 'accepted', 'declined', 'cancelled'];
+    const params = [];
+    let where = '';
+    if (allowed.includes(status)) {
+      where = 'WHERE qr.status = ?';
+      params.push(status);
+    }
+    const [rows] = await db.query(
+      `SELECT qr.id, qr.client_id, qr.service_id, qr.customer_notes, qr.status,
+              qr.proposed_amount, qr.billing_cycle, qr.proposal_notes, qr.valid_until,
+              qr.created_at, qr.updated_at, qr.responded_at,
+              c.name AS client_name, c.email AS client_email,
+              s.name AS service_name, s.category
+       FROM quote_requests qr
+       JOIN clients c ON c.id = qr.client_id
+       JOIN services s ON s.id = qr.service_id
+       ${where}
+       ORDER BY FIELD(qr.status, 'requested', 'proposed', 'accepted', 'declined', 'cancelled'),
+                qr.id DESC
+       LIMIT 500`,
+      params
+    );
+    return res.json({ quote_requests: rows.map(row => ({
+      ...row,
+      proposed_amount: row.proposed_amount === null ? null : Number(row.proposed_amount)
+    })) });
+  } catch (e) {
+    console.error('Erro listar orçamentos:', e.code || e.message || 'erro');
+    return erro(res, 500, 'Não foi possível listar os orçamentos.');
+  }
+});
+
+app.patch('/api/quote-requests/:id/proposal', autenticado, somenteAdmin, async (req, res) => {
+  try {
+    const id = validarId(req.params.id);
+    const amount = Number(req.body.proposed_amount);
+    const billingCycle = req.body.billing_cycle || 'one_time';
+    const proposalNotes = textoOpcional(req.body.proposal_notes, 5000);
+    const validUntil = req.body.valid_until || null;
+    if (!id || !Number.isFinite(amount) || amount < 0.01 || amount > 99999999 ||
+        !['one_time', 'monthly', 'yearly'].includes(billingCycle) ||
+        proposalNotes === undefined || !validarData(validUntil)) {
+      return erro(res, 400, 'Confira o valor, ciclo, observações e validade da proposta.');
+    }
+    const [result] = await db.query(
+      `UPDATE quote_requests
+       SET proposed_amount = ?, billing_cycle = ?, proposal_notes = ?,
+           valid_until = ?, status = 'proposed', responded_at = NULL
+       WHERE id = ? AND status IN ('requested', 'proposed')`,
+      [Number(amount.toFixed(2)), billingCycle, proposalNotes || null, validUntil, id]
+    );
+    if (!result.affectedRows) {
+      return erro(res, 409, 'Este orçamento não está aguardando proposta ou já foi respondido.');
+    }
+    return res.json({ sucesso: true, mensagem: 'Proposta enviada ao cliente.', id });
+  } catch (e) {
+    console.error('Erro enviar proposta:', e.code || e.message || 'erro');
+    return erro(res, 500, 'Não foi possível enviar a proposta.');
+  }
+});
+
 // SOLICITAÇÕES DE SERVIÇOS — ADMINISTRAR
 // --------------------------------------------------
 
