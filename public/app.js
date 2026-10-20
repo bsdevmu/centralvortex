@@ -1173,6 +1173,8 @@
           await renderOrders();
         } else if (state.page === 'services') {
           await renderServices();
+        } else if (state.page === 'activations') {
+          await renderActivations();
         }
         return result;
       }
@@ -3100,6 +3102,11 @@
         case 'orders-filter':
           state.orderStatus = element.dataset.status || 'pending';
           navigate('orders');
+          break;
+
+        case 'activations-filter':
+          state.activationStatus = element.dataset.status || 'in_progress';
+          navigate('activations');
           break;
 
         case 'review-order':
