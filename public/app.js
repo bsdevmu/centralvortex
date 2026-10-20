@@ -10,6 +10,7 @@
     clientSearch: '',
     clientStatus: 'all',
     orderStatus: 'pending',
+    activationStatus: 'in_progress',
     financeStatus: 'all',
     financeSearch: '',
     currentClientId: null,
@@ -350,6 +351,7 @@
       'dashboard',
       'clients',
       'services',
+      'activations',
       'categories',
       'orders',
       'finance',
@@ -363,7 +365,7 @@
       return;
     }
 
-    if (['orders', 'services'].includes(page) && state.user?.role !== 'admin') {
+    if (['orders', 'services', 'activations'].includes(page) && state.user?.role !== 'admin') {
       notify('Esta área é restrita a administradores.', true);
       return;
     }
@@ -391,7 +393,8 @@
     const titles = {
       dashboard: 'Visão geral',
       clients: 'Clientes',
-      services: 'Serviços',
+      services: 'Catálogo de serviços',
+      activations: 'Ativações e serviços contratados',
       categories: 'Categorias de serviços',
       orders: 'Solicitações',
       finance: 'Financeiro',
@@ -419,6 +422,9 @@
           break;
         case 'services':
           await renderServices();
+          break;
+        case 'activations':
+          await renderActivations();
           break;
         case 'categories':
           await renderCategories();
@@ -2134,6 +2140,77 @@
     } catch {
       badge.hidden = true;
     }
+  }
+
+  // --------------------------------------------------
+  // ATIVAÇÕES — SERVIÇOS CONTRATADOS
+  // --------------------------------------------------
+
+  async function renderActivations() {
+    const result = await api('/api/contracted-services');
+    const services = getArray(result, 'services');
+    const status = state.activationStatus || 'in_progress';
+
+    const matches = service => {
+      const operational = service.operational_status || 'awaiting_payment';
+      if (status === 'in_progress') {
+        return ['awaiting_payment', 'preparing', 'awaiting_supplier', 'awaiting_client', 'activating'].includes(operational);
+      }
+      if (status === 'active') return operational === 'active';
+      if (status === 'attention') return ['activation_failed', 'awaiting_supplier', 'awaiting_client'].includes(operational);
+      if (status === 'paused') return ['suspended', 'cancelled'].includes(operational);
+      return true;
+    };
+
+    const filtered = services.filter(matches);
+    const inProgress = services.filter(service => ['awaiting_payment', 'preparing', 'awaiting_supplier', 'awaiting_client', 'activating'].includes(service.operational_status || 'awaiting_payment')).length;
+    const active = services.filter(service => service.operational_status === 'active').length;
+    const attention = services.filter(service => ['activation_failed', 'awaiting_supplier', 'awaiting_client'].includes(service.operational_status)).length;
+
+    const tabs = [
+      ['in_progress', 'Em andamento'],
+      ['active', 'Ativados'],
+      ['attention', 'Precisam de atenção'],
+      ['paused', 'Suspensos / cancelados'],
+      ['all', 'Todos']
+    ];
+
+    content.innerHTML = `
+      ${pageHeader('Ativações e serviços contratados',
+        'Acompanhe todos os serviços vendidos, desde a confirmação do pagamento até a ativação, sem precisar abrir cada perfil de cliente.')}
+
+      <section class="stats-grid" style="margin-bottom:18px">
+        ${statCard('Em andamento', String(inProgress), 'Aguardando preparação ou ativação', '◷')}
+        ${statCard('Ativados', String(active), 'Serviços prontos para o cliente', '✓')}
+        ${statCard('Precisam de atenção', String(attention), 'Pendências com fornecedor ou cliente e falhas', '!')}
+      </section>
+
+      <section class="content-card" style="margin-bottom:18px">
+        <div class="filter-tabs" role="tablist" aria-label="Filtrar serviços contratados">
+          ${tabs.map(([value, label]) => `
+            <button type="button" role="tab"
+              class="filter-tab ${status === value ? 'active' : ''}"
+              aria-selected="${status === value ? 'true' : 'false'}"
+              data-action="activations-filter" data-status="${value}">${label}</button>
+          `).join('')}
+        </div>
+        <p class="summary-footer">${filtered.length} serviço(s) exibido(s) de ${services.length} contratado(s).</p>
+      </section>
+
+      ${table(
+        ['ID', 'Cliente', 'Serviço', 'Valor', 'Pagamento / contrato', 'Etapa operacional', 'Criado em', 'Ações'],
+        filtered.map(service => [
+          `#${escapeHTML(service.id)}`,
+          `<strong>${escapeHTML(service.client_name || 'Cliente')}</strong><br><small>${escapeHTML(service.client_email || '—')}</small>`,
+          `<strong>${escapeHTML(service.name || 'Serviço')}</strong>${service.service_category ? `<br><small>${escapeHTML(service.service_category)}</small>` : ''}`,
+          money(service.sale_price),
+          statusLabel(service.status),
+          `<div><strong>${escapeHTML(operationalStatusLabel(service.operational_status))}</strong><div class="summary-footer" style="margin-top:6px">${service.operational_status !== 'active' && service.operational_status !== 'cancelled' ? `<button type="button" class="btn btn-small btn-primary" data-action="change-operational-status" data-id="${escapeHTML(service.id)}" data-status="${escapeHTML(service.operational_status || 'awaiting_payment')}" data-name="${escapeHTML(service.name || 'Serviço')}">Atualizar etapa</button> ` : ''}<button type="button" class="btn btn-small" data-action="view-operational-history" data-id="${escapeHTML(service.id)}" data-name="${escapeHTML(service.name || 'Serviço')}">Histórico</button></div></div>`,
+          dateTime(service.created_at),
+          `<button type="button" class="btn btn-small" data-action="client-record" data-id="${escapeHTML(service.client_id)}">Abrir cliente</button>`
+        ])
+      )}
+    `;
   }
 
   async function renderOrders() {
