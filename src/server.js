@@ -21,6 +21,34 @@ if (!process.env.SESSION_SECRET || !process.env.ADMIN_SETUP_KEY) {
 }
 
 app.use(helmet());
+
+// Diagnóstico seguro do webhook: registra a chegada da requisição e o status
+// final sem registrar corpo, token, segredo ou valor da assinatura.
+app.use((req, res, next) => {
+  if (req.path !== '/api/webhooks/mercadopago') {
+    return next();
+  }
+
+  const diagnostico = {
+    method: req.method,
+    contentType: req.get('content-type') || null,
+    contentLength: req.get('content-length') || null,
+    hasSignature: Boolean(req.get('x-signature')),
+    hasRequestId: Boolean(req.get('x-request-id')),
+    hasDataIdQuery: typeof req.query['data.id'] === 'string'
+  };
+
+  console.info('Webhook Mercado Pago — requisição recebida.', diagnostico);
+  res.on('finish', () => {
+    console.info('Webhook Mercado Pago — resposta enviada.', {
+      method: req.method,
+      status: res.statusCode
+    });
+  });
+
+  return next();
+});
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -63,12 +91,49 @@ function valorMonetario(valor) {
   return Number.isFinite(n) && n >= 0 && n <= 999999999;
 }
 
-function autenticado(req, res, next) {
+async function autenticado(req, res, next) {
   if (!req.session || !req.session.user) {
     return erro(res, 401, 'Faça login para continuar.');
   }
 
-  next();
+  try {
+    // Revalida o usuário e o perfil no banco para que mudanças de acesso
+    // tenham efeito sem depender de um novo login ou esperar a sessão expirar.
+    const [rows] = await db.query(
+      'SELECT id, name, email, role, active FROM users WHERE id = ? LIMIT 1',
+      [req.session.user.id]
+    );
+
+    const user = rows[0];
+
+    if (!user || !normalizarBooleano(user.active, false)) {
+      return req.session.destroy(() => {
+        res.clearCookie('vortexgrid.sid', {
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: 'auto',
+          path: '/'
+        });
+        return erro(res, 401, 'Sua conta está inativa ou não existe mais. Faça login novamente.');
+      });
+    }
+
+    if (!['admin', 'staff'].includes(user.role)) {
+      return erro(res, 403, 'O perfil desta conta não possui permissões válidas.');
+    }
+
+    req.session.user = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    };
+
+    return next();
+  } catch (e) {
+    console.error('Erro ao validar sessão:', e.code || e.message || 'erro');
+    return erro(res, 503, 'Não foi possível validar seu acesso neste momento.');
+  }
 }
 
 function somenteAdmin(req, res, next) {
@@ -335,7 +400,7 @@ app.get('/api/me', autenticado, (req, res) => {
 // DASHBOARD
 // --------------------------------------------------
 
-app.get('/api/dashboard', autenticado, async (req, res) => {
+app.get('/api/dashboard', autenticado, somenteAdmin, async (req, res) => {
   try {
     const [[clientes]] = await db.query(
       `SELECT COUNT(*) AS total
@@ -343,10 +408,23 @@ app.get('/api/dashboard', autenticado, async (req, res) => {
        WHERE status = 'active'`
     );
 
+    // Serviços ativos vendidos a clientes (não apenas itens do catálogo).
     const [[servicos]] = await db.query(
+      `SELECT COUNT(*) AS total
+       FROM contracted_services
+       WHERE status = 'active'`
+    );
+
+    const [[servicosCatalogo]] = await db.query(
       `SELECT COUNT(*) AS total
        FROM services
        WHERE active = 1`
+    );
+
+    const [[ativacoes]] = await db.query(
+      `SELECT COUNT(*) AS total
+       FROM contracted_services
+       WHERE status IN ('pending', 'provisioning')`
     );
 
     const [[usuarios]] = await db.query(
@@ -417,7 +495,7 @@ app.get('/api/dashboard', autenticado, async (req, res) => {
     }
 
     const [ultimasFaturas] = await db.query(`
-      SELECT i.id, i.description, i.amount, i.status, i.due_date,
+      SELECT i.id, i.description, i.amount, i.status, i.due_date, i.created_at,
              c.name AS client_name
       FROM invoices i
       JOIN clients c ON c.id = i.client_id
@@ -445,14 +523,35 @@ app.get('/api/dashboard', autenticado, async (req, res) => {
       }));
     }
 
+    const [clientesRecentes] = await db.query('SELECT id, name, email, created_at FROM clients ORDER BY created_at DESC, id DESC LIMIT 5');
+    const [pagamentosRecentes] = await db.query("SELECT p.id, p.amount, p.method, p.paid_at, c.name AS client_name, i.description AS invoice_description FROM payments p JOIN invoices i ON i.id = p.invoice_id JOIN clients c ON c.id = i.client_id WHERE p.paid_at IS NOT NULL ORDER BY p.paid_at DESC, p.id DESC LIMIT 5");
+    let ativacoesRecentes = [];
+    if (req.session.user.role === 'admin') {
+      const [rows] = await db.query("SELECT cs.id, cs.name, cs.status, cs.created_at, cs.updated_at, c.name AS client_name FROM contracted_services cs JOIN clients c ON c.id = cs.client_id ORDER BY COALESCE(cs.updated_at, cs.created_at) DESC, cs.id DESC LIMIT 5");
+      ativacoesRecentes = rows;
+    }
+    const atividadeRecente = [
+      ...clientesRecentes.map(item => ({ tipo: 'cliente', titulo: item.name, descricao: item.email || 'Cadastro de cliente', data: item.created_at, pagina: 'clients', ordem: item.created_at ? new Date(item.created_at).getTime() : 0 })),
+      ...pagamentosRecentes.map(item => ({ tipo: 'pagamento', titulo: item.client_name, descricao: item.invoice_description || (item.method ? 'Pagamento via ' + item.method : 'Pagamento registrado'), data: item.paid_at, valor: Number(item.amount || 0), pagina: 'finance', ordem: item.paid_at ? new Date(item.paid_at).getTime() : 0 })),
+      ...ultimasFaturas.map(item => ({ tipo: 'fatura', titulo: item.client_name, descricao: item.description || ('Fatura #' + item.id), data: item.created_at, valor: Number(item.amount || 0), pagina: 'finance', ordem: item.created_at ? new Date(item.created_at).getTime() : 0 })),
+      ...(req.session.user.role === 'admin' ? ativacoesRecentes.map(item => ({ tipo: 'ativacao', titulo: item.name || 'Serviço contratado', descricao: item.client_name + ' - Status: ' + item.status, data: item.updated_at || item.created_at, pagina: 'services', ordem: (item.updated_at || item.created_at) ? new Date(item.updated_at || item.created_at).getTime() : 0 })) : []),
+      ...solicitacoesRecentes.map(item => ({ tipo: 'solicitacao', titulo: item.client_name, descricao: item.description_snapshot || 'Solicitação de serviço', data: item.created_at, valor: Number(item.amount_snapshot || 0), pagina: 'orders', ordem: item.created_at ? new Date(item.created_at).getTime() : 0 }))
+    ].sort((a, b) => b.ordem - a.ordem).slice(0, 8).map(({ ordem, ...item }) => item);
+
     return res.json({
       clientes: Number(clientes.total),
       servicos: Number(servicos.total),
-      usuarios: Number(usuarios.total),
+      ...(req.session.user.role === 'admin' ? {
+        servicosCatalogo: Number(servicosCatalogo.total),
+        ativacoesPendentes: Number(ativacoes.total),
+        usuarios: Number(usuarios.total)
+      } : {}),
       faturasPendentes: Number(faturas.quantidade),
       valorPendente: Number(faturas.total),
       recebidoMes: Number(recebido.total),
-      solicitacoesPendentes: Number(solicitacoes.total),
+      ...(req.session.user.role === 'admin' ? {
+        solicitacoesPendentes: Number(solicitacoes.total)
+      } : {}),
       faturasVencidas: Number(vencidas.quantidade),
       valorVencido: Number(vencidas.total),
       recebimentosMensais,
@@ -460,7 +559,8 @@ app.get('/api/dashboard', autenticado, async (req, res) => {
         ...item,
         amount: Number(item.amount || 0)
       })),
-      solicitacoesRecentes
+      ...(req.session.user.role === 'admin' ? { solicitacoesRecentes } : {}),
+      atividadeRecente
     });
   } catch (e) {
     console.error('Erro dashboard:', e.code || e.message || 'erro');
@@ -533,7 +633,7 @@ app.post('/api/users', autenticado, somenteAdmin, async (req, res) => {
 // CLIENTES — LISTAR E PESQUISAR
 // --------------------------------------------------
 
-app.get('/api/clients', autenticado, async (req, res) => {
+app.get('/api/clients', autenticado, somenteAdmin, async (req, res) => {
   try {
     const q = typeof req.query.q === 'string'
       ? req.query.q.trim().slice(0, 190)
@@ -616,7 +716,7 @@ app.post('/api/clients', autenticado, async (req, res) => {
 // CLIENTES — EDITAR
 // --------------------------------------------------
 
-app.put('/api/clients/:id', autenticado, async (req, res) => {
+app.put('/api/clients/:id', autenticado, somenteAdmin, async (req, res) => {
   try {
     const id = validarId(req.params.id);
 
@@ -665,7 +765,7 @@ app.put('/api/clients/:id', autenticado, async (req, res) => {
 // CLIENTES — ATIVAR / INATIVAR
 // --------------------------------------------------
 
-app.patch('/api/clients/:id/status', autenticado, async (req, res) => {
+app.patch('/api/clients/:id/status', autenticado, somenteAdmin, async (req, res) => {
   try {
     const id = validarId(req.params.id);
     const { status } = req.body;
@@ -715,7 +815,7 @@ app.patch('/api/clients/:id/status', autenticado, async (req, res) => {
 // FICHA DO CLIENTE — DADOS, FINANCEIRO E SERVIÇOS
 // --------------------------------------------------
 
-app.get('/api/clients/:id/record', autenticado, async (req, res) => {
+app.get('/api/clients/:id/record', autenticado, somenteAdmin, async (req, res) => {
   try {
     const id = validarId(req.params.id);
 
@@ -796,10 +896,22 @@ app.get('/api/clients/:id/record', autenticado, async (req, res) => {
       amount: Number(payment.amount || 0)
     }));
 
-    const servicosContratados = contractedServiceRows.map(service => ({
-      ...service,
-      sale_price: Number(service.sale_price || 0)
-    }));
+    const isAdmin = req.session.user.role === 'admin';
+    const servicosContratados = contractedServiceRows.map(service => {
+      const item = {
+        ...service,
+        sale_price: Number(service.sale_price || 0)
+      };
+
+      // Operadores consultam os dados operacionais básicos, sem referências
+      // ou observações internas vinculadas ao serviço contratado.
+      if (!isAdmin) {
+        delete item.external_reference;
+        delete item.notes;
+      }
+
+      return item;
+    });
 
     const totals = {
       invoiceCount: invoices.length,
@@ -2410,7 +2522,7 @@ app.get('/api/invoices', autenticado, async (req, res) => {
   }
 });
 
-app.post('/api/invoices', autenticado, async (req, res) => {
+app.post('/api/invoices', autenticado, somenteAdmin, async (req, res) => {
   try {
     const {
       client_id,
@@ -2466,7 +2578,7 @@ app.post('/api/invoices', autenticado, async (req, res) => {
 // REGISTRAR PAGAMENTO INTEGRAL
 // --------------------------------------------------
 
-app.post('/api/invoices/:id/payments', autenticado, async (req, res) => {
+app.post('/api/invoices/:id/payments', autenticado, somenteAdmin, async (req, res) => {
   let conn;
 
   try {
@@ -2539,7 +2651,7 @@ app.post('/api/invoices/:id/payments', autenticado, async (req, res) => {
 // ATUALIZAR FATURAS VENCIDAS
 // --------------------------------------------------
 
-app.post('/api/invoices/refresh-overdue', autenticado, async (req, res) => {
+app.post('/api/invoices/refresh-overdue', autenticado, somenteAdmin, async (req, res) => {
   try {
     await db.query(`
       UPDATE invoices
@@ -2716,7 +2828,7 @@ app.post('/api/users/:id/password', autenticado, somenteAdmin, async (req, res) 
 // MINHA CONTA — ALTERAR PRÓPRIA SENHA
 // --------------------------------------------------
 
-app.post('/api/me/password', autenticado, async (req, res) => {
+app.post('/api/me/password', autenticado, somenteAdmin, async (req, res) => {
   try {
     const { current_password: atual, new_password: nova } = req.body;
 
@@ -2759,7 +2871,7 @@ app.post('/api/me/password', autenticado, async (req, res) => {
 // FATURAS — CANCELAR
 // --------------------------------------------------
 
-app.patch('/api/invoices/:id/cancel', autenticado, async (req, res) => {
+app.patch('/api/invoices/:id/cancel', autenticado, somenteAdmin, async (req, res) => {
   try {
     const id = validarId(req.params.id);
 
@@ -2786,6 +2898,719 @@ app.patch('/api/invoices/:id/cancel', autenticado, async (req, res) => {
 });
 
 // --------------------------------------------------
+// MERCADO PAGO PIX — EMISSÃO E CONFIRMAÇÃO VALIDADA
+// --------------------------------------------------
+
+const crypto = require('crypto');
+const MP_API_BASE = 'https://api.mercadopago.com';
+
+function mercadoPagoConfigurado() {
+  return Boolean(process.env.MP_ACCESS_TOKEN && process.env.MP_WEBHOOK_SECRET);
+}
+
+async function mercadoPagoRequest(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+      'Accept': 'application/json',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {})
+    },
+    signal: AbortSignal.timeout(20000)
+  });
+
+  const raw = await response.text();
+  let data;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    throw new Error(`Resposta inválida do Mercado Pago (HTTP ${response.status}).`);
+  }
+
+  if (!response.ok) {
+    const causes = Array.isArray(data.cause)
+      ? data.cause.map(item => item.code || item.description).filter(Boolean).join('; ')
+      : '';
+    const detail = data.message || causes || data.error || `HTTP ${response.status}`;
+    throw new Error(`Mercado Pago: ${String(detail).slice(0, 350)}`);
+  }
+  return data;
+}
+
+async function garantirTabelaMercadoPago() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS mercadopago_transactions (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      invoice_id BIGINT UNSIGNED NOT NULL,
+      payment_id VARCHAR(64) NOT NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      amount DECIMAL(12,2) NOT NULL,
+      pix_code TEXT DEFAULT NULL,
+      pix_url TEXT DEFAULT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_mp_payment_id (payment_id),
+      KEY idx_mp_invoice_id (invoice_id),
+      KEY idx_mp_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+function validarAssinaturaMercadoPago(req) {
+  const segredo = process.env.MP_WEBHOOK_SECRET;
+  const assinatura = req.get('x-signature') || '';
+  const requestId = req.get('x-request-id') || '';
+  const dataIdRaw = typeof req.query['data.id'] === 'string'
+    ? req.query['data.id']
+    : (typeof req.query.id === 'string' ? req.query.id : '');
+  const dataId = dataIdRaw.trim().toLowerCase();
+
+  if (!segredo) return { valida: false, motivo: 'segredo_ausente' };
+  if (!assinatura) return { valida: false, motivo: 'cabecalho_x_signature_ausente' };
+  if (!requestId) return { valida: false, motivo: 'cabecalho_x_request_id_ausente' };
+  if (!dataId) return { valida: false, motivo: 'parametro_data_id_ausente' };
+
+  const partes = {};
+  for (const parte of assinatura.split(',')) {
+    const separador = parte.indexOf('=');
+    if (separador < 1) continue;
+    const chave = parte.slice(0, separador).trim();
+    const valor = parte.slice(separador + 1).trim();
+    if (chave && valor) partes[chave] = valor;
+  }
+
+  if (!partes.ts || !partes.v1 || !/^[a-f0-9]{64}$/i.test(partes.v1)) {
+    return { valida: false, motivo: 'formato_x_signature_invalido' };
+  }
+
+  const manifesto = `id:${dataId};request-id:${requestId};ts:${partes.ts};`;
+  const esperado = crypto.createHmac('sha256', segredo).update(manifesto).digest();
+  const recebidoBuffer = Buffer.from(partes.v1, 'hex');
+
+  if (recebidoBuffer.length !== esperado.length) {
+    return { valida: false, motivo: 'assinatura_nao_confere' };
+  }
+
+  return {
+    valida: crypto.timingSafeEqual(recebidoBuffer, esperado),
+    motivo: 'assinatura_nao_confere'
+  };
+}
+
+async function garantirTabelaCheckoutPro() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS mercadopago_checkout_preferences (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      invoice_id BIGINT UNSIGNED NOT NULL,
+      preference_id VARCHAR(100) NOT NULL,
+      payment_id VARCHAR(64) DEFAULT NULL,
+      external_reference VARCHAR(120) NOT NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'created',
+      amount DECIMAL(12,2) NOT NULL,
+      init_point TEXT NOT NULL,
+      sandbox_init_point TEXT DEFAULT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_mp_preference_id (preference_id),
+      KEY idx_mp_checkout_invoice (invoice_id),
+      KEY idx_mp_checkout_payment (payment_id),
+      KEY idx_mp_checkout_reference (external_reference)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin, async (req, res) => {
+  if (!process.env.MP_ACCESS_TOKEN) {
+    return erro(res, 503, 'Mercado Pago não configurado: falta MP_ACCESS_TOKEN no ambiente.');
+  }
+
+  try {
+    const invoiceId = validarId(req.params.id);
+    if (!invoiceId) return erro(res, 400, 'Identificador da fatura inválido.');
+
+    const [rows] = await db.query(
+      `SELECT i.id, i.client_id, i.description, i.amount, i.status,
+              c.name AS client_name, c.email AS client_email
+       FROM invoices i
+       INNER JOIN clients c ON c.id = i.client_id
+       WHERE i.id = ? LIMIT 1`,
+      [invoiceId]
+    );
+    const invoice = rows[0];
+
+    if (!invoice) return erro(res, 404, 'Fatura não encontrada.');
+    if (!['pending', 'overdue'].includes(invoice.status)) {
+      return erro(res, 409, 'Somente faturas pendentes ou vencidas podem receber um link de Checkout Pro.');
+    }
+
+    // Checkout Pro em produção: usar somente credenciais oficiais de produção.
+    // MP_ENVIRONMENT é uma confirmação explícita do operador; o prefixo APP_USR-
+    // sozinho não diferencia tokens de produção de tokens de contas de teste.
+    if (String(process.env.MP_ENVIRONMENT || '').trim().toLowerCase() !== 'production') {
+      return erro(res, 409, 'Checkout Pro está bloqueado até configurar MP_ENVIRONMENT=production e credenciais oficiais de produção no servidor.');
+    }
+    if (!String(process.env.MP_ACCESS_TOKEN || '').startsWith('APP_USR-')) {
+      return erro(res, 409, 'O Access Token não parece válido. Confira as Credenciais de produção da aplicação Central VortexGrid.');
+    }
+
+    if (!validarEmail(invoice.client_email)) {
+      return erro(res, 400, 'O cadastro do cliente precisa ter um e-mail válido antes de criar o checkout.');
+    }
+
+    const amount = Number(invoice.amount);
+    if (!Number.isFinite(amount) || amount < 0.01 || amount > 99999999) {
+      return erro(res, 400, 'Valor da fatura inválido para emissão do Checkout Pro.');
+    }
+
+    const baseUrl = String(process.env.PUBLIC_BASE_URL || 'https://central.vortexgrid.com.br').replace(/\/$/, '');
+    const notificationUrl = `${baseUrl}/api/webhooks/mercadopago`;
+    const externalReference = `vortexgrid-invoice-${invoice.id}`;
+    const description = String(invoice.description || `Fatura VortexGrid #${invoice.id}`).slice(0, 250);
+    const payload = {
+      items: [{
+        id: String(invoice.id),
+        title: description,
+        description,
+        quantity: 1,
+        currency_id: 'BRL',
+        unit_price: Number(amount.toFixed(2))
+      }],
+      external_reference: externalReference,
+      notification_url: notificationUrl,
+      back_urls: {
+        success: `${baseUrl}/?checkout=success&invoice_id=${invoice.id}`,
+        pending: `${baseUrl}/?checkout=pending&invoice_id=${invoice.id}`,
+        failure: `${baseUrl}/?checkout=failure&invoice_id=${invoice.id}`
+      },
+      auto_return: 'approved',
+      // Identificação curta da marca na cobrança; a personalização visual
+      // completa do checkout é limitada ao que o Mercado Pago disponibiliza.
+      statement_descriptor: 'VORTEXGRID',
+      payer: { email: invoice.client_email },
+      // Não definimos installments: o Checkout Pro aplica as condições
+      // de parcelamento disponíveis para a conta e para o comprador.
+      payment_methods: {
+        // Mantém Pix, cartões e saldo Mercado Pago; remove boleto/lotérica
+        // do checkout padrão. A disponibilidade final depende da conta.
+        excluded_payment_types: [{ id: 'ticket' }]
+      }
+    };
+
+    const preference = await mercadoPagoRequest(`${MP_API_BASE}/checkout/preferences`, {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': crypto.randomUUID() },
+      body: JSON.stringify(payload)
+    });
+
+    const preferenceId = preference.id ? String(preference.id) : '';
+    const initPoint = typeof preference.init_point === 'string' ? preference.init_point : '';
+    const sandboxInitPoint = typeof preference.sandbox_init_point === 'string'
+      ? preference.sandbox_init_point
+      : null;
+
+    if (!preferenceId || !/^https:\/\//i.test(initPoint)) {
+      console.error('Mercado Pago não retornou uma preferência Checkout Pro válida.', {
+        preferenceIdPresent: Boolean(preferenceId),
+        initPointPresent: Boolean(initPoint)
+      });
+      return erro(res, 502, 'O Mercado Pago não retornou o link do Checkout Pro.');
+    }
+
+    await garantirTabelaCheckoutPro();
+    await db.query(
+      `INSERT INTO mercadopago_checkout_preferences
+        (invoice_id, preference_id, external_reference, status, amount, init_point, sandbox_init_point)
+       VALUES (?, ?, ?, 'created', ?, ?, ?)`,
+      [invoice.id, preferenceId, externalReference, amount, initPoint, sandboxInitPoint]
+    );
+
+    // Checkout Pro com vendedor/comprador de teste usa init_point.
+    // A simulação depende de usar as credenciais do vendedor de teste e entrar
+    // no checkout com a conta compradora de teste, não de sandbox_init_point.
+    const checkoutUrl = initPoint;
+
+    return res.status(201).json({
+      mensagem: 'Preferência Checkout Pro criada.',
+      invoice_id: invoice.id,
+      preference_id: preferenceId,
+      external_reference: externalReference,
+      amount,
+      init_point: initPoint,
+      sandbox_init_point: sandboxInitPoint,
+      checkout_url: checkoutUrl
+    });
+  } catch (e) {
+    console.error('Erro criar preferência Checkout Pro:', e.message || e.code || 'erro');
+    return erro(res, 502, 'Não foi possível criar a preferência Checkout Pro. Confira as credenciais e o log da aplicação.');
+  }
+});
+
+app.post('/api/invoices/:id/mercadopago/pix', autenticado, somenteAdmin, async (req, res) => {
+  if (!process.env.MP_ACCESS_TOKEN) {
+    return erro(res, 503, 'Mercado Pago não configurado: falta MP_ACCESS_TOKEN no ambiente.');
+  }
+
+  try {
+    const invoiceId = validarId(req.params.id);
+    const cpf = typeof req.body.payer_cpf_cnpj === 'string'
+      ? req.body.payer_cpf_cnpj.replace(/\D/g, '')
+      : '';
+    const daysDue = req.body.days_due_date === undefined ? 1 : Number(req.body.days_due_date);
+
+    if (!invoiceId) return erro(res, 400, 'Identificador da fatura inválido.');
+    if (!/^\d{11}$|^\d{14}$/.test(cpf)) {
+      return erro(res, 400, 'Informe CPF ou CNPJ válido do pagador (somente números).');
+    }
+    if (!Number.isInteger(daysDue) || daysDue < 1 || daysDue > 30) {
+      return erro(res, 400, 'O vencimento do PIX deve ficar entre 1 e 30 dias.');
+    }
+
+    await garantirTabelaMercadoPago();
+    const [rows] = await db.query(
+      `SELECT i.id, i.client_id, i.description, i.amount, i.status,
+              c.name AS client_name, c.email AS client_email
+       FROM invoices i
+       INNER JOIN clients c ON c.id = i.client_id
+       WHERE i.id = ? LIMIT 1`,
+      [invoiceId]
+    );
+    const invoice = rows[0];
+
+    if (!invoice) return erro(res, 404, 'Fatura não encontrada.');
+    if (!['pending', 'overdue'].includes(invoice.status)) {
+      return erro(res, 409, 'Somente faturas pendentes ou vencidas podem receber um PIX.');
+    }
+
+    const amount = Number(invoice.amount);
+    if (!Number.isFinite(amount) || amount < 0.01 || amount > 99999999) {
+      return erro(res, 400, 'Valor da fatura inválido para emissão do PIX.');
+    }
+    if (!validarEmail(invoice.client_email)) {
+      return erro(res, 400, 'O cadastro do cliente precisa ter um e-mail válido antes de emitir o PIX.');
+    }
+
+    const notificationUrl = `${String(process.env.PUBLIC_BASE_URL || 'https://central.vortexgrid.com.br').replace(/\/$/, '')}/api/webhooks/mercadopago`;
+    const idempotencyKey = crypto.randomUUID();
+    const payload = {
+      transaction_amount: Number(amount.toFixed(2)),
+      description: String(invoice.description || `Fatura VortexGrid #${invoice.id}`).slice(0, 250),
+      payment_method_id: 'pix',
+      external_reference: `vortexgrid-invoice-${invoice.id}`,
+      notification_url: notificationUrl,
+      date_of_expiration: new Date(Date.now() + daysDue * 86400000).toISOString(),
+      payer: {
+        email: invoice.client_email,
+        first_name: String(invoice.client_name || 'Cliente').trim().split(/\s+/)[0].slice(0, 80),
+        identification: {
+          type: cpf.length === 11 ? 'CPF' : 'CNPJ',
+          number: cpf
+        }
+      }
+    };
+
+    const payment = await mercadoPagoRequest(`${MP_API_BASE}/v1/payments`, {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(payload)
+    });
+
+    const paymentId = payment.id ? String(payment.id) : '';
+    const pixData = payment.point_of_interaction?.transaction_data || {};
+    const pixCode = typeof pixData.qr_code === 'string' ? pixData.qr_code : null;
+    const pixUrl = typeof pixData.ticket_url === 'string' ? pixData.ticket_url : null;
+
+    if (!paymentId || (!pixCode && !pixUrl)) {
+      console.error('Mercado Pago não retornou dados PIX esperados:', {
+        paymentIdPresent: Boolean(paymentId),
+        status: payment.status || 'ausente',
+        detail: payment.status_detail || 'sem detalhe'
+      });
+      return erro(res, 502, 'O Mercado Pago não retornou os dados esperados do PIX. Confira o log.');
+    }
+
+    await db.query(
+      `INSERT INTO mercadopago_transactions
+        (invoice_id, payment_id, status, amount, pix_code, pix_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [invoice.id, paymentId, String(payment.status || 'pending'), amount, pixCode, pixUrl]
+    );
+
+    return res.status(201).json({
+      mensagem: 'PIX emitido pelo Mercado Pago.',
+      invoice_id: invoice.id,
+      payment_id: paymentId,
+      amount,
+      status: payment.status || 'pending',
+      pix_code: pixCode,
+      pix_url: pixUrl,
+      qr_code_base64: pixData.qr_code_base64 || null,
+      expiration_date: payment.date_of_expiration || null
+    });
+  } catch (e) {
+    console.error('Erro emissão PIX Mercado Pago:', e.message || e.code || 'erro');
+    return erro(res, 502, 'Não foi possível emitir o PIX pelo Mercado Pago. Confira as credenciais e o log da aplicação.');
+  }
+});
+
+// --------------------------------------------------
+// MERCADO PAGO — DIAGNÓSTICO SOMENTE LEITURA (ADMIN)
+// Consulta o pagamento na API e compara com os registros locais,
+// sem criar cobrança, registrar recebimento ou alterar fatura.
+// --------------------------------------------------
+app.get('/api/admin/mercadopago/diagnostico/:paymentId', autenticado, somenteAdmin, async (req, res) => {
+  const paymentId = typeof req.params.paymentId === 'string' ? req.params.paymentId.trim() : '';
+
+  if (!/^\d{1,30}$/.test(paymentId)) {
+    return erro(res, 400, 'ID de pagamento inválido.');
+  }
+
+  if (!process.env.MP_ACCESS_TOKEN) {
+    return erro(res, 503, 'Mercado Pago não configurado: falta MP_ACCESS_TOKEN no ambiente.');
+  }
+
+  try {
+    const payment = await mercadoPagoRequest(
+      `${MP_API_BASE}/v1/payments/${encodeURIComponent(paymentId)}`,
+      { method: 'GET' }
+    );
+
+    const [transactionRows] = await db.query(
+      `SELECT id, invoice_id, payment_id, status, amount, created_at, updated_at
+       FROM mercadopago_transactions
+       WHERE payment_id = ?
+       LIMIT 1`,
+      [String(payment.id)]
+    );
+    const transaction = transactionRows[0] || null;
+
+    let invoice = null;
+    if (transaction) {
+      const [invoiceRows] = await db.query(
+        'SELECT id, amount, status, description FROM invoices WHERE id = ? LIMIT 1',
+        [transaction.invoice_id]
+      );
+      invoice = invoiceRows[0] || null;
+    }
+
+    return res.set('Cache-Control', 'no-store').json({
+      somente_leitura: true,
+      mercado_pago: {
+        payment_id: String(payment.id),
+        status: payment.status || null,
+        status_detail: payment.status_detail || null,
+        transaction_amount: Number(payment.transaction_amount || 0),
+        external_reference: payment.external_reference || null,
+        currency_id: payment.currency_id || null,
+        live_mode: Boolean(payment.live_mode)
+      },
+      transacao_local: transaction ? {
+        id: transaction.id,
+        invoice_id: transaction.invoice_id,
+        payment_id: transaction.payment_id,
+        status: transaction.status,
+        amount: Number(transaction.amount),
+        valor_confere: Math.round(Number(transaction.amount) * 100) === Math.round(Number(payment.transaction_amount) * 100),
+        referencia_confere: payment.external_reference === `vortexgrid-invoice-${transaction.invoice_id}`
+      } : null,
+      fatura_local: invoice ? {
+        id: invoice.id,
+        amount: Number(invoice.amount),
+        status: invoice.status,
+        description: invoice.description
+      } : null,
+      diagnostico: !transaction
+        ? 'Pagamento existe no Mercado Pago, mas não foi encontrada transação local com esse payment_id.'
+        : !invoice
+          ? 'Transação local encontrada, mas a fatura vinculada não foi encontrada.'
+          : 'Consulta concluída; nenhum dado foi alterado.'
+    });
+  } catch (e) {
+    console.error('Erro diagnóstico Mercado Pago:', e.message || e.code || 'erro');
+    return erro(res, 502, 'Não foi possível consultar o pagamento no Mercado Pago. Confira o log da aplicação.');
+  }
+});
+
+// --------------------------------------------------
+// MERCADO PAGO — CONCILIAÇÃO MANUAL VALIDADA (ADMIN)
+// Revalida o pagamento diretamente na API antes de registrar
+// o recebimento. Operação idempotente por referência do pagamento.
+// --------------------------------------------------
+app.post('/api/admin/mercadopago/conciliar/:paymentId', autenticado, somenteAdmin, async (req, res) => {
+  const paymentId = typeof req.params.paymentId === 'string'
+    ? req.params.paymentId.trim()
+    : '';
+
+  if (!/^\d{1,30}$/.test(paymentId)) {
+    return erro(res, 400, 'ID de pagamento inválido.');
+  }
+
+  if (!process.env.MP_ACCESS_TOKEN) {
+    return erro(res, 503, 'Mercado Pago não configurado: falta MP_ACCESS_TOKEN no ambiente.');
+  }
+
+  let conn;
+  try {
+    await garantirTabelaMercadoPago();
+
+    // A fonte de verdade é consultada ao vivo; não confiamos no diagnóstico anterior.
+    const payment = await mercadoPagoRequest(
+      `${MP_API_BASE}/v1/payments/${encodeURIComponent(paymentId)}`,
+      { method: 'GET' }
+    );
+
+    if (String(payment.id) !== paymentId) {
+      return erro(res, 409, 'O ID retornado pelo Mercado Pago não corresponde ao solicitado.');
+    }
+
+    if (payment.status !== 'approved' || payment.status_detail !== 'accredited') {
+      return erro(res, 409, 'O Mercado Pago ainda não confirma este pagamento como aprovado e creditado.');
+    }
+
+    if (payment.currency_id !== 'BRL' || !payment.live_mode) {
+      return erro(res, 409, 'O pagamento não pertence ao ambiente de produção em BRL.');
+    }
+
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const [transactionRows] = await conn.query(
+      `SELECT id, invoice_id, payment_id, status, amount
+       FROM mercadopago_transactions
+       WHERE payment_id = ?
+       LIMIT 1
+       FOR UPDATE`,
+      [paymentId]
+    );
+    const local = transactionRows[0];
+
+    if (!local) {
+      await conn.rollback();
+      return erro(res, 404, 'Não existe transação local para este pagamento. Nenhum dado foi alterado.');
+    }
+
+    const expectedAmount = Number(local.amount);
+    const paidAmount = Number(payment.transaction_amount);
+    const expectedReference = `vortexgrid-invoice-${local.invoice_id}`;
+
+    if (
+      payment.external_reference !== expectedReference ||
+      !Number.isFinite(paidAmount) ||
+      !Number.isFinite(expectedAmount) ||
+      Math.round(paidAmount * 100) !== Math.round(expectedAmount * 100)
+    ) {
+      await conn.rollback();
+      return erro(res, 409, 'O valor ou a referência do pagamento não corresponde à transação local.');
+    }
+
+    const [invoiceRows] = await conn.query(
+      'SELECT id, amount, status FROM invoices WHERE id = ? FOR UPDATE',
+      [local.invoice_id]
+    );
+    const invoice = invoiceRows[0];
+
+    if (
+      !invoice ||
+      Math.round(Number(invoice.amount) * 100) !== Math.round(expectedAmount * 100)
+    ) {
+      await conn.rollback();
+      return erro(res, 409, 'A fatura não corresponde ao valor confirmado pelo Mercado Pago.');
+    }
+
+    await conn.query(
+      'UPDATE mercadopago_transactions SET status = ? WHERE payment_id = ?',
+      ['approved', paymentId]
+    );
+
+    const [existingPayments] = await conn.query(
+      'SELECT id FROM payments WHERE reference = ? LIMIT 1',
+      [`mercadopago:${paymentId}`]
+    );
+
+    let paymentRecorded = false;
+    if (!existingPayments.length) {
+      await conn.query(
+        'INSERT INTO payments (invoice_id, amount, method, reference) VALUES (?, ?, ?, ?)',
+        [local.invoice_id, expectedAmount, 'mercadopago_pix', `mercadopago:${paymentId}`]
+      );
+      paymentRecorded = true;
+    }
+
+    await conn.query(
+      "UPDATE invoices SET status = 'paid' WHERE id = ?",
+      [local.invoice_id]
+    );
+
+    await conn.commit();
+
+    console.info('Conciliação manual Mercado Pago concluída.', {
+      paymentId,
+      invoiceId: local.invoice_id,
+      paymentRecorded
+    });
+
+    return res.set('Cache-Control', 'no-store').json({
+      conciliado: true,
+      payment_id: paymentId,
+      invoice_id: Number(local.invoice_id),
+      status_mercado_pago: payment.status,
+      status_transacao_local: 'approved',
+      status_fatura: 'paid',
+      recebimento_novo: paymentRecorded,
+      mensagem: paymentRecorded
+        ? 'Pagamento validado e recebimento registrado; fatura marcada como paga.'
+        : 'Pagamento já estava registrado; fatura confirmada como paga sem duplicar o recebimento.'
+    });
+  } catch (e) {
+    if (conn) await conn.rollback().catch(() => {});
+    console.error('Erro conciliação manual Mercado Pago:', e.message || e.code || 'erro');
+    return erro(res, 500, 'Não foi possível conciliar o pagamento. Nenhuma confirmação deve ser presumida.');
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/webhooks/mercadopago', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  return res.status(405).json({
+    erro: 'Endpoint disponível. O webhook do Mercado Pago recebe notificações por POST.'
+  });
+});
+
+app.post('/api/webhooks/mercadopago', async (req, res) => {
+  if (!process.env.MP_ACCESS_TOKEN || !process.env.MP_WEBHOOK_SECRET) {
+    console.error('Webhook Mercado Pago recebido, mas faltam MP_ACCESS_TOKEN ou MP_WEBHOOK_SECRET.');
+    return erro(res, 503, 'Webhook Mercado Pago não configurado no servidor.');
+  }
+
+  const resultadoAssinatura = validarAssinaturaMercadoPago(req);
+  if (!resultadoAssinatura.valida) {
+    // Registra apenas o motivo técnico; nunca registra token, segredo ou assinatura.
+    console.warn('Webhook Mercado Pago rejeitado na validação:', resultadoAssinatura.motivo);
+    return erro(res, 401, 'Assinatura do webhook inválida.');
+  }
+
+  const topic = String(req.query.type || req.body?.type || req.body?.topic || '').toLowerCase();
+  const paymentId = String(req.query['data.id'] || req.query.id || req.body?.data?.id || '').trim();
+  if (!paymentId || (topic && !['payment', 'payments'].includes(topic))) {
+    return res.status(200).json({ recebido: true, ignorado: true });
+  }
+
+  let conn;
+  try {
+    await garantirTabelaMercadoPago();
+    const payment = await mercadoPagoRequest(`${MP_API_BASE}/v1/payments/${encodeURIComponent(paymentId)}`, {
+      method: 'GET'
+    });
+    const [transactions] = await db.query(
+      'SELECT id, invoice_id, payment_id, amount, status FROM mercadopago_transactions WHERE payment_id = ? LIMIT 1',
+      [String(payment.id)]
+    );
+
+    let local = transactions[0] ? { ...transactions[0], source: 'pix' } : null;
+
+    if (!local) {
+      const externalReference = String(payment.external_reference || '');
+      const match = externalReference.match(/^vortexgrid-invoice-(\d+)$/);
+      const referencedInvoiceId = match ? Number(match[1]) : 0;
+
+      if (referencedInvoiceId > 0) {
+        await garantirTabelaCheckoutPro();
+        const [preferences] = await db.query(
+          `SELECT id, invoice_id, preference_id, payment_id, external_reference, amount, status
+           FROM mercadopago_checkout_preferences
+           WHERE invoice_id = ? AND external_reference = ?
+           ORDER BY id DESC
+           LIMIT 1`,
+          [referencedInvoiceId, externalReference]
+        );
+        if (preferences[0]) {
+          local = { ...preferences[0], source: 'checkout_pro' };
+        }
+      }
+    }
+
+    if (!local) {
+      console.warn('Webhook Mercado Pago sem transação local correspondente.', { paymentId: String(payment.id) });
+      return res.status(200).json({ recebido: true, ignorado: true });
+    }
+
+    const paidAmount = Number(payment.transaction_amount);
+    const expectedAmount = Number(local.amount);
+    const expectedReference = local.external_reference || `vortexgrid-invoice-${local.invoice_id}`;
+    if (payment.external_reference !== expectedReference ||
+        !Number.isFinite(paidAmount) ||
+        Math.round(paidAmount * 100) !== Math.round(expectedAmount * 100)) {
+      console.error('Mercado Pago: pagamento não conciliado por referência ou valor.', {
+        paymentId: String(payment.id),
+        invoiceId: local.invoice_id
+      });
+      return erro(res, 409, 'Pagamento não corresponde à fatura local.');
+    }
+
+    const status = String(payment.status || 'unknown');
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+    if (local.source === 'checkout_pro') {
+      await conn.query(
+        'UPDATE mercadopago_checkout_preferences SET status = ?, payment_id = ? WHERE id = ?',
+        [status.slice(0, 32), String(payment.id), local.id]
+      );
+    } else {
+      await conn.query(
+        'UPDATE mercadopago_transactions SET status = ? WHERE payment_id = ?',
+        [status.slice(0, 32), String(payment.id)]
+      );
+    }
+
+    if (status === 'approved') {
+      const [invoiceRows] = await conn.query(
+        'SELECT id, amount, status FROM invoices WHERE id = ? FOR UPDATE',
+        [local.invoice_id]
+      );
+      const invoice = invoiceRows[0];
+      if (!invoice || Math.round(Number(invoice.amount) * 100) !== Math.round(expectedAmount * 100)) {
+        await conn.rollback();
+        return erro(res, 409, 'A fatura não corresponde ao valor confirmado pelo Mercado Pago.');
+      }
+
+      const [existingPayments] = await conn.query(
+        "SELECT id FROM payments WHERE reference = ? LIMIT 1",
+        [`mercadopago:${payment.id}`]
+      );
+      if (!existingPayments.length) {
+        await conn.query(
+          'INSERT INTO payments (invoice_id, amount, method, reference) VALUES (?, ?, ?, ?)',
+          [
+            local.invoice_id,
+            expectedAmount,
+            local.source === 'checkout_pro' ? 'mercadopago_checkout_pro' : 'mercadopago_pix',
+            `mercadopago:${payment.id}`
+          ]
+        );
+      }
+      await conn.query("UPDATE invoices SET status = 'paid' WHERE id = ?", [local.invoice_id]);
+    }
+
+    await conn.commit();
+    console.info('Webhook Mercado Pago processado.', {
+      paymentId: String(payment.id),
+      invoiceId: local.invoice_id,
+      status
+    });
+    return res.status(200).json({ recebido: true, status });
+  } catch (e) {
+    if (conn) await conn.rollback().catch(() => {});
+    console.error('Erro webhook Mercado Pago:', e.message || e.code || 'erro');
+    return erro(res, 500, 'Não foi possível validar a notificação do Mercado Pago.');
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+// --------------------------------------------------
 // INTERFACE E ERROS
 // --------------------------------------------------
 
@@ -2802,14 +3627,25 @@ app.use('/api', (req, res) => {
 });
 
 app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  // JSON malformado deve receber 400, não um 500 genérico.
+  if (
+    req.path === '/api/webhooks/mercadopago' &&
+    err instanceof SyntaxError &&
+    err.status === 400 &&
+    Object.prototype.hasOwnProperty.call(err, 'body')
+  ) {
+    console.warn('Webhook Mercado Pago rejeitado: corpo JSON inválido.');
+    return erro(res, 400, 'Corpo JSON inválido.');
+  }
+
   console.error(
     'Erro interno:',
     err.code || err.message || err.name || 'erro'
   );
-
-  if (res.headersSent) {
-    return next(err);
-  }
 
   return erro(res, 500, 'Erro interno do servidor.');
 });
