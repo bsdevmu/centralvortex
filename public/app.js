@@ -1003,7 +1003,11 @@
         </div>
 
         ${contractedServices.length ? table(
-          ['Serviço', 'Categoria', 'Valor', 'Cobrança', 'Status', 'Estado operacional interno', 'Próximo vencimento', 'Vinculado em', 'Ação'],
+          [
+            'Serviço', 'Categoria', 'Valor', 'Cobrança', 'Status',
+            ...(state.user?.role === 'admin' ? ['Estado operacional interno'] : []),
+            'Próximo vencimento', 'Vinculado em', 'Ação'
+          ],
           contractedServices.map(service => [
             `<strong>${escapeHTML(service.name || 'Serviço')}</strong>${service.description ? `<div class="summary-footer">${escapeHTML(service.description)}</div>` : ''}`,
             escapeHTML(service.service_category || '—'),
@@ -1014,9 +1018,9 @@
               yearly: 'Anual'
             }[service.billing_cycle] || service.billing_cycle || '—'),
             statusLabel(service.status),
-            state.user?.role === 'admin'
-              ? `<div><strong>${escapeHTML(operationalStatusLabel(service.operational_status))}</strong><div class="summary-footer" style="margin-top:6px"><button type="button" class="btn btn-small" data-action="change-operational-status" data-id="${escapeHTML(service.id)}" data-status="${escapeHTML(service.operational_status || 'awaiting_payment')}" data-name="${escapeHTML(service.name || 'Serviço')}">Alterar estado interno</button> <button type="button" class="btn btn-small" data-action="view-operational-history" data-id="${escapeHTML(service.id)}" data-name="${escapeHTML(service.name || 'Serviço')}">Histórico</button></div></div>`
-              : 'Em acompanhamento',
+            ...(state.user?.role === 'admin' ? [
+              `<div><strong>${escapeHTML(operationalStatusLabel(service.operational_status))}</strong><div class="summary-footer" style="margin-top:6px"><button type="button" class="btn btn-small" data-action="change-operational-status" data-id="${escapeHTML(service.id)}" data-status="${escapeHTML(service.operational_status || 'awaiting_payment')}" data-name="${escapeHTML(service.name || 'Serviço')}">Alterar estado interno</button> <button type="button" class="btn btn-small" data-action="view-operational-history" data-id="${escapeHTML(service.id)}" data-name="${escapeHTML(service.name || 'Serviço')}">Histórico</button></div></div>`
+            ] : []),
             date(service.next_due_date),
             date(service.created_at),
             contractedServiceAction(service)
