@@ -2650,6 +2650,9 @@ app.patch(
       );
 
       const order = orders[0];
+      let contractedServiceId = order?.contracted_service_id
+        ? Number(order.contracted_service_id)
+        : null;
 
       if (!order) {
         await conn.rollback();
