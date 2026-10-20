@@ -98,7 +98,7 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
       const user = req.session.user;
       await db.query("INSERT INTO support_ticket_messages(ticket_id,sender_type,sender_id,sender_name,message) VALUES(?,'staff',?,?,?)",
         [id, user.id, String(user.name || 'Equipe VortexGrid').slice(0,160), message]);
-      await db.query("UPDATE support_tickets SET status=IF(status='open','in_progress',status),last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?", [id]);
+      await db.query("UPDATE support_tickets SET status='in_progress',last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?", [id]);
       return res.status(201).json({ mensagem: 'Resposta enviada.' });
     } catch (error) {
       console.error('Erro ao responder ticket:', error.code || error.message);
