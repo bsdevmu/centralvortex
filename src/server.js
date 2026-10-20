@@ -40,6 +40,30 @@ app.use(session({
 }));
 
 // --------------------------------------------------
+
+/* --------------------------------------------------
+   INFORMAÇÕES PERSONALIZADAS DOS SERVIÇOS CONTRATADOS
+-------------------------------------------------- */
+let contractedServiceDetailsTableReady;
+async function ensureContractedServiceDetailsTable() {
+  if (!contractedServiceDetailsTableReady) {
+    contractedServiceDetailsTableReady = db.query(`
+      CREATE TABLE IF NOT EXISTS contracted_service_details (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        contracted_service_id BIGINT UNSIGNED NOT NULL,
+        label VARCHAR(80) NOT NULL,
+        value TEXT NOT NULL,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_contracted_service_details_service (contracted_service_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `).catch(error => { contractedServiceDetailsTableReady = null; throw error; });
+  }
+  await contractedServiceDetailsTableReady;
+}
+
 // AUXILIARES
 // --------------------------------------------------
 
@@ -714,6 +738,69 @@ app.patch('/api/clients/:id/status', autenticado, async (req, res) => {
 // --------------------------------------------------
 // FICHA DO CLIENTE — DADOS, FINANCEIRO E SERVIÇOS
 // --------------------------------------------------
+
+
+/* --------------------------------------------------
+   INFORMAÇÕES DO SERVIÇO — ADMINISTRAÇÃO
+-------------------------------------------------- */
+app.get('/api/contracted-services/:id/details', autenticado, somenteAdmin, async (req, res) => {
+  try {
+    const id = validarId(req.params.id);
+    if (!id) return erro(res, 400, 'Identificador de serviço inválido.');
+    const [serviceRows] = await db.query('SELECT id FROM contracted_services WHERE id = ? LIMIT 1', [id]);
+    if (!serviceRows.length) return erro(res, 404, 'Serviço contratado não encontrado.');
+    await ensureContractedServiceDetailsTable();
+    const [rows] = await db.query(
+      'SELECT id, label, value, sort_order FROM contracted_service_details WHERE contracted_service_id = ? ORDER BY sort_order ASC, id ASC',
+      [id]
+    );
+    return res.json({ details: rows });
+  } catch (error) {
+    console.error('Erro ao consultar informações do serviço:', error.code || error.message || 'erro');
+    return erro(res, 500, 'Não foi possível carregar as informações deste serviço.');
+  }
+});
+
+app.put('/api/contracted-services/:id/details', autenticado, somenteAdmin, async (req, res) => {
+  let connection;
+  try {
+    const id = validarId(req.params.id);
+    if (!id) return erro(res, 400, 'Identificador de serviço inválido.');
+    const details = req.body?.details;
+    if (!Array.isArray(details) || details.length > 30) return erro(res, 400, 'Envie uma lista válida com até 30 informações.');
+    const normalized = [];
+    for (const item of details) {
+      const label = typeof item?.label === 'string' ? item.label.trim() : '';
+      const value = typeof item?.value === 'string' ? item.value.trim() : '';
+      if (!label && !value) continue;
+      if (!validarTexto(label, 80) || !value || value.length > 4000) {
+        return erro(res, 400, 'Cada informação precisa ter um título de até 80 caracteres e um valor de até 4.000 caracteres.');
+      }
+      normalized.push({ label, value });
+    }
+    const [serviceRows] = await db.query('SELECT id FROM contracted_services WHERE id = ? LIMIT 1', [id]);
+    if (!serviceRows.length) return erro(res, 404, 'Serviço contratado não encontrado.');
+    await ensureContractedServiceDetailsTable();
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+    await connection.query('DELETE FROM contracted_service_details WHERE contracted_service_id = ?', [id]);
+    for (let index = 0; index < normalized.length; index += 1) {
+      const item = normalized[index];
+      await connection.query(
+        'INSERT INTO contracted_service_details (contracted_service_id, label, value, sort_order) VALUES (?, ?, ?, ?)',
+        [id, item.label, item.value, index]
+      );
+    }
+    await connection.commit();
+    return res.json({ mensagem: 'Informações do serviço atualizadas.', total: normalized.length });
+  } catch (error) {
+    if (connection) { try { await connection.rollback(); } catch (_) {} }
+    console.error('Erro ao salvar informações do serviço:', error.code || error.message || 'erro');
+    return erro(res, 500, 'Não foi possível salvar as informações deste serviço.');
+  } finally {
+    if (connection) connection.release();
+  }
+});
 
 app.get('/api/clients/:id/record', autenticado, async (req, res) => {
   try {
