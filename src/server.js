@@ -2285,6 +2285,8 @@ app.post('/api/services', autenticado, somenteAdmin, async (req, res) => {
       ? body.category.trim()
       : '';
 
+    let pricingMode = 'fixed';
+
     if (
       body.category_id !== undefined &&
       body.category_id !== null &&
@@ -2321,7 +2323,6 @@ app.post('/api/services', autenticado, somenteAdmin, async (req, res) => {
     const badge = textoOpcional(body.badge, 80);
     const price = Number(body.price);
     const billingCycle = body.billing_cycle || 'monthly';
-    let pricingMode = 'fixed';
     const specifications = normalizarEspecificacoes(body.specifications);
 
     const supplierProductId = body.supplier_product_id
