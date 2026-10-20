@@ -868,6 +868,7 @@ app.get('/api/clients/:id/record', autenticado, somenteAdmin, async (req, res) =
          cs.name,
          cs.description,
          cs.status,
+         cs.operational_status,
          cs.billing_cycle,
          cs.sale_price,
          cs.started_at,
@@ -908,6 +909,7 @@ app.get('/api/clients/:id/record', autenticado, somenteAdmin, async (req, res) =
       if (!isAdmin) {
         delete item.external_reference;
         delete item.notes;
+        delete item.operational_status;
       }
 
       return item;
@@ -1220,6 +1222,73 @@ app.patch(
     }
   }
 );
+
+
+ // --------------------------------------------------
+ // SERVIÇOS CONTRATADOS — ESTADO OPERACIONAL INTERNO
+ // Somente administradores. Não altera financeiro nem status público.
+ // --------------------------------------------------
+ app.patch('/api/contracted-services/:id/operational-status', autenticado, somenteAdmin, async (req, res) => {
+   let conn;
+   try {
+     const id = validarId(req.params.id);
+     const status = req.body.operational_status;
+     const note = typeof req.body.note === 'string' ? req.body.note.trim() : '';
+     const allowed = ['awaiting_payment','preparing','awaiting_supplier','awaiting_client','activating','active','activation_failed','suspended','cancelled'];
+     if (!id) return erro(res, 400, 'Identificador do serviço inválido.');
+     if (!allowed.includes(status)) return erro(res, 400, 'Estado operacional inválido.');
+     if (!note || note.length > 2000) return erro(res, 400, 'Informe uma observação interna de até 2000 caracteres.');
+     conn = await db.getConnection();
+     await conn.beginTransaction();
+     const [rows] = await conn.query('SELECT id, operational_status FROM contracted_services WHERE id = ? FOR UPDATE', [id]);
+     if (!rows.length) {
+       await conn.rollback();
+       return erro(res, 404, 'Serviço contratado não encontrado.');
+     }
+     const previous = rows[0].operational_status || 'awaiting_payment';
+     if (previous === status) {
+       await conn.rollback();
+       return erro(res, 409, 'O serviço já está nesse estado operacional.');
+     }
+     await conn.query('UPDATE contracted_services SET operational_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, id]);
+     await conn.query(
+       `INSERT INTO contracted_service_status_history
+         (contracted_service_id, previous_status, new_status, note, changed_by)
+        VALUES (?, ?, ?, ?, ?)`,
+       [id, previous, status, note, req.session.user.id]
+     );
+     await conn.commit();
+     return res.json({ mensagem: 'Estado operacional atualizado. O financeiro não foi alterado.', id, operational_status: status });
+   } catch (e) {
+     if (conn) await conn.rollback().catch(() => {});
+     console.error('Erro alterar estado operacional:', e.code || e.message || 'erro');
+     if (['ER_NO_SUCH_TABLE','ER_BAD_FIELD_ERROR'].includes(e.code)) return erro(res, 503, 'A migração do estado operacional ainda não foi aplicada ao banco.');
+     return erro(res, 500, 'Não foi possível alterar o estado operacional.');
+   } finally {
+     if (conn) conn.release();
+   }
+ });
+
+ app.get('/api/contracted-services/:id/operational-history', autenticado, somenteAdmin, async (req, res) => {
+   try {
+     const id = validarId(req.params.id);
+     if (!id) return erro(res, 400, 'Identificador do serviço inválido.');
+     const [rows] = await db.query(
+       `SELECT h.id, h.previous_status, h.new_status, h.note, h.changed_at,
+               u.name AS changed_by_name
+        FROM contracted_service_status_history h
+        LEFT JOIN users u ON u.id = h.changed_by
+        WHERE h.contracted_service_id = ?
+        ORDER BY h.id DESC LIMIT 100`,
+       [id]
+     );
+     return res.json({ historico: rows });
+   } catch (e) {
+     console.error('Erro consultar histórico operacional:', e.code || e.message || 'erro');
+     if (e.code === 'ER_NO_SUCH_TABLE') return erro(res, 503, 'A migração do estado operacional ainda não foi aplicada ao banco.');
+     return erro(res, 500, 'Não foi possível carregar o histórico operacional.');
+   }
+ });
 
 // --------------------------------------------------
 // SERVIÇOS CONTRATADOS — ALTERAR STATUS
