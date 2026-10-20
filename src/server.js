@@ -2217,6 +2217,7 @@ app.get('/api/catalog', async (req, res) => {
          c.name AS linked_category_name,
          p.name AS parent_category_name,
          s.price,
+         s.pricing_mode,
          s.billing_cycle,
          s.region,
          s.specifications,
@@ -2242,6 +2243,8 @@ app.get('/api/catalog', async (req, res) => {
     return res.json(rows.map(row => ({
       ...row,
       price: Number(row.price || 0),
+      pricing_mode: row.pricing_mode === 'quote' ? 'quote' : 'fixed',
+      quote_required: row.pricing_mode === 'quote',
       featured: Boolean(row.featured),
       display_order: Number(row.display_order || 0),
       specifications: normalizarEspecificacoes(row.specifications) || {}
