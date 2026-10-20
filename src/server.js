@@ -3123,9 +3123,15 @@ app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin
       [invoice.id, preferenceId, externalReference, amount, initPoint, sandboxInitPoint]
     );
 
-    const checkoutUrl = String(process.env.MP_ACCESS_TOKEN).startsWith('TEST-')
-      ? (sandboxInitPoint || initPoint)
-      : initPoint;
+    // Em teste, nunca redirecionar para init_point de produção por fallback.
+    if (!sandboxInitPoint) {
+      console.error('Preferência de teste sem sandbox_init_point.', {
+        preferenceIdPresent: Boolean(preferenceId)
+      });
+      return erro(res, 502, 'O Mercado Pago não retornou sandbox_init_point para o checkout de teste. Verifique as credenciais de teste da aplicação.');
+    }
+
+    const checkoutUrl = sandboxInitPoint;
 
     return res.status(201).json({
       mensagem: 'Preferência Checkout Pro criada.',
