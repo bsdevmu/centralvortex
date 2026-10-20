@@ -92,13 +92,29 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
       const id = validarId(req.params.id);
       const message = typeof req.body.message === 'string' ? req.body.message.trim() : '';
       if (!id || !validText(message, 5000)) return erro(res, 400, 'Escreva uma mensagem de até 5.000 caracteres.');
-      const [tickets] = await db.query('SELECT id,status FROM support_tickets WHERE id=? LIMIT 1', [id]);
-      if (!tickets.length) return erro(res, 404, 'Ticket não encontrado.');
-      if (tickets[0].status === 'closed') return erro(res, 409, 'Este ticket está encerrado.');
-      const user = req.session.user;
-      await db.query("INSERT INTO support_ticket_messages(ticket_id,sender_type,sender_id,sender_name,message) VALUES(?,'staff',?,?,?)",
-        [id, user.id, String(user.name || 'Equipe VortexGrid').slice(0,160), message]);
-      await db.query("UPDATE support_tickets SET status='in_progress',last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?", [id]);
+      const connection = await db.getConnection();
+      try {
+        await connection.beginTransaction();
+        const [tickets] = await connection.query('SELECT id,status FROM support_tickets WHERE id=? LIMIT 1 FOR UPDATE', [id]);
+        if (!tickets.length) {
+          await connection.rollback();
+          return erro(res, 404, 'Ticket não encontrado.');
+        }
+        if (tickets[0].status === 'closed') {
+          await connection.rollback();
+          return erro(res, 409, 'Este ticket está encerrado.');
+        }
+        const user = req.session.user;
+        await connection.query("INSERT INTO support_ticket_messages(ticket_id,sender_type,sender_id,sender_name,message) VALUES(?,'staff',?,?,?)",
+          [id, user.id, String(user.name || 'Equipe VortexGrid').slice(0,160), message]);
+        await connection.query("UPDATE support_tickets SET status='in_progress',last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?", [id]);
+        await connection.commit();
+      } catch (transactionError) {
+        await connection.rollback();
+        throw transactionError;
+      } finally {
+        connection.release();
+      }
       return res.status(201).json({ mensagem: 'Resposta enviada.' });
     } catch (error) {
       console.error('Erro ao responder ticket:', error.code || error.message);
