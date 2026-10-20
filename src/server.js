@@ -2727,6 +2727,7 @@ app.get('/api/quote-requests', autenticado, somenteAdmin, async (req, res) => {
     const [rows] = await db.query(
       `SELECT qr.id, qr.client_id, qr.service_id, qr.customer_notes, qr.status,
               qr.proposed_amount, qr.billing_cycle, qr.proposal_notes, qr.valid_until,
+              COALESCE(qr.workflow_status, CASE WHEN qr.status = 'accepted' THEN 'awaiting_contracting' ELSE NULL END) AS workflow_status,
               qr.created_at, qr.updated_at, qr.responded_at,
               c.name AS client_name, c.email AS client_email, c.phone AS client_phone,
               s.name AS service_name, s.category
@@ -2775,6 +2776,50 @@ app.patch('/api/quote-requests/:id/proposal', autenticado, somenteAdmin, async (
   } catch (e) {
     console.error('Erro enviar proposta:', e.code || e.message || 'erro');
     return erro(res, 500, 'Não foi possível enviar a proposta.');
+  }
+});
+
+app.patch('/api/quote-requests/:id/workflow', autenticado, somenteAdmin, async (req, res) => {
+  try {
+    const id = validarId(req.params.id);
+    const workflowStatus = req.body.workflow_status;
+    const allowed = ['awaiting_contracting', 'in_contracting', 'ready_for_billing'];
+
+    if (!id || !allowed.includes(workflowStatus)) {
+      return erro(res, 400, 'Etapa operacional de orçamento inválida.');
+    }
+
+    const [result] = await db.query(
+      `UPDATE quote_requests
+       SET workflow_status = ?
+       WHERE id = ? AND status = 'accepted'`,
+      [workflowStatus, id]
+    );
+
+    if (!result.affectedRows) {
+      const [rows] = await db.query(
+        'SELECT id, status FROM quote_requests WHERE id = ? LIMIT 1',
+        [id]
+      );
+      if (!rows.length) return erro(res, 404, 'Orçamento não encontrado.');
+      return erro(res, 409, 'A etapa operacional só pode ser alterada após o cliente aceitar a proposta.');
+    }
+
+    const labels = {
+      awaiting_contracting: 'Aguardando contratação',
+      in_contracting: 'Em contratação',
+      ready_for_billing: 'Pronto para faturamento'
+    };
+
+    return res.json({
+      sucesso: true,
+      id,
+      workflow_status: workflowStatus,
+      mensagem: 'Etapa atualizada para: ' + labels[workflowStatus] + '. Nenhuma fatura ou ativação foi criada.'
+    });
+  } catch (e) {
+    console.error('Erro atualizar etapa do orçamento:', e.code || e.message || 'erro');
+    return erro(res, 500, 'Não foi possível atualizar a etapa do orçamento.');
   }
 });
 
