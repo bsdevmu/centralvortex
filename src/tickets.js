@@ -55,10 +55,26 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
   app.get('/api/tickets', autenticado, async (req, res) => {
     try {
       await ensureSchema();
-      const status = statuses.includes(req.query.status) ? req.query.status : null;
+      const filters = [];
       const params = [];
-      const where = status ? 'WHERE t.status = ?' : '';
-      if (status) params.push(status);
+      if (statuses.includes(req.query.status)) {
+        filters.push('t.status = ?');
+        params.push(req.query.status);
+      }
+      if (priorities.includes(req.query.priority)) {
+        filters.push('t.priority = ?');
+        params.push(req.query.priority);
+      }
+      if (req.query.assigned_to === 'unassigned') {
+        filters.push('t.assigned_to IS NULL');
+      } else if (req.query.assigned_to) {
+        const assignedTo = validarId(req.query.assigned_to);
+        if (assignedTo) {
+          filters.push('t.assigned_to = ?');
+          params.push(assignedTo);
+        }
+      }
+      const where = filters.length ? 'WHERE ' + filters.join(' AND ') : '';
       const [rows] = await db.query(`
         SELECT t.id,t.client_id,t.contracted_service_id,t.subject,t.category,t.priority,t.status,t.assigned_to,
           t.created_at,t.updated_at,t.last_message_at,c.name AS client_name,c.email AS client_email,
@@ -69,7 +85,7 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
         LEFT JOIN contracted_services cs ON cs.id=t.contracted_service_id
         LEFT JOIN users u ON u.id=t.assigned_to
         ${where}
-        ORDER BY FIELD(t.status,'open','in_progress','waiting_customer','resolved','closed'),t.last_message_at DESC
+        ORDER BY FIELD(t.priority,'urgent','high','normal','low'),FIELD(t.status,'open','in_progress','waiting_customer','resolved','closed'),t.last_message_at DESC
         LIMIT 500
       `, params);
       return res.json(rows);
@@ -170,6 +186,18 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
     } catch (error) {
       console.error('Erro ao atualizar ticket:', error.code || error.message);
       return erro(res, 500, 'Não foi possível atualizar o ticket.');
+    }
+  });
+
+  app.get('/api/ticket-staff', autenticado, async (req, res) => {
+    try {
+      const [rows] = await db.query(
+        "SELECT id,name,role FROM users WHERE active=1 AND role IN ('admin','staff') ORDER BY name ASC"
+      );
+      return res.json(rows);
+    } catch (error) {
+      console.error('Erro ao listar responsáveis dos tickets:', error.code || error.message);
+      return erro(res, 500, 'Não foi possível carregar a equipe de atendimento.');
     }
   });
 
