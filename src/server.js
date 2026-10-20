@@ -2604,7 +2604,7 @@ app.put('/api/services/:id', autenticado, somenteAdmin, async (req, res) => {
         updates.push('category = ?');
         values.push(catRows[0].name);
         updates.push('pricing_mode = ?');
-        values.push(categoriaExigeOrcamento(catRows[0].name, catRows[0].parent_name) ? 'quote' : 'fixed');
+        values.push(categoriaExigeOrcamento(catRows[0].pricing_mode, catRows[0].name, catRows[0].parent_name) ? 'quote' : 'fixed');
       }
 
       updates.push(`${field.column} = ?`);
