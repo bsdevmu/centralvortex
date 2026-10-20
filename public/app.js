@@ -2301,19 +2301,34 @@
           `<div class="quick-actions">${order.approval_status === 'pending' ? `<button type="button" class="btn btn-small btn-primary" data-action="review-order" data-id="${escapeHTML(order.id)}">Analisar</button>` : `<small>${escapeHTML(order.reviewed_by_name || 'Automático')}<br>${dateTime(order.reviewed_at)} ${order.admin_notes ? `<br>“${escapeHTML(order.admin_notes)}”` : ''}</small>`}${order.contracted_service_id && order.payment_status === 'paid' ? `<button type="button" class="btn btn-small" data-action="change-operational-status" data-id="${escapeHTML(order.contracted_service_id)}" data-status="${escapeHTML(order.operational_status || 'awaiting_payment')}" data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Atualizar etapa</button><button type="button" class="btn btn-small" data-action="view-operational-history" data-id="${escapeHTML(order.contracted_service_id)}" data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Histórico</button>` : ''}</div>`
         ]))}
       <section class="content-card" style="margin-top:24px">
-        <div class="panel-heading"><div><h2>Orçamentos personalizados</h2><p>Defina a proposta para Empresas, Sistemas e Gestão Comercial. Nenhuma fatura é criada antes da contratação.</p></div></div>
+        <div class="panel-heading"><div><h2>Orçamentos personalizados</h2><p>Acompanhe a solicitação, a resposta do cliente e as etapas de contratação. Avançar etapas não cria faturas nem ativa serviços.</p></div></div>
         <p class="summary-footer">${quotes.length} orçamento(s) registrado(s).</p>
-        ${table(['Nº', 'Cliente', 'Produto', 'Necessidade informada', 'Proposta', 'Validade', 'Status', 'Ação'],
-          quotes.map(q => [
-            escapeHTML(q.id),
-            `<strong>${escapeHTML(q.client_name)}</strong><br><small>${escapeHTML(q.client_email || 'E-mail não informado')}</small>${q.client_phone ? `<br><small>${escapeHTML(q.client_phone)}</small>` : ''}${q.client_email ? `<br><a class="text-action" href="mailto:${escapeHTML(q.client_email)}">Enviar e-mail</a>` : ''}${q.client_phone ? `<br><a class="text-action" href="https://wa.me/${escapeHTML((String(q.client_phone).replace(/\D/g, '').startsWith('55') ? String(q.client_phone).replace(/\D/g, '') : '55' + String(q.client_phone).replace(/\D/g, '')))}" target="_blank" rel="noopener noreferrer">Contatar pelo WhatsApp</a>` : ''}`,
-            escapeHTML(q.service_name),
-            escapeHTML(q.customer_notes || 'Sem detalhes adicionais'),
-            q.proposed_amount == null ? 'A definir' : `${money(q.proposed_amount)} · ${escapeHTML(cycleLabel(q.billing_cycle))}${q.proposal_notes ? `<br><small>${escapeHTML(q.proposal_notes)}</small>` : ''}`,
-            escapeHTML(q.valid_until || '—'),
-            escapeHTML(({requested:'Novo pedido — entrar em contato',proposed:'Proposta enviada',accepted:'Aceito pelo cliente',declined:'Recusado pelo cliente',cancelled:'Cancelado'})[q.status] || q.status),
-            q.status === 'requested' || q.status === 'proposed' ? `<button type="button" class="btn btn-small btn-primary" data-action="propose-quote" data-id="${escapeHTML(q.id)}">${q.status === 'proposed' ? 'Editar proposta' : 'Enviar proposta'}</button>` : '<small>Sem ações disponíveis</small>'
-          ]))}
+        ${table(['Nº', 'Cliente', 'Produto', 'Necessidade informada', 'Proposta', 'Validade', 'Status / etapa', 'Ação'],
+          quotes.map(q => {
+            const workflow = q.workflow_status || (q.status === 'accepted' ? 'awaiting_contracting' : '');
+            const workflowLabels = {
+              awaiting_contracting: 'Aguardando contratação',
+              in_contracting: 'Em contratação',
+              ready_for_billing: 'Pronto para faturamento'
+            };
+            const stageText = workflowLabels[workflow] || '';
+            const statusText = ({requested:'Novo pedido — entrar em contato',proposed:'Proposta enviada',accepted:'Aceito pelo cliente',declined:'Recusado pelo cliente',cancelled:'Cancelado'})[q.status] || q.status;
+            const action = q.status === 'requested' || q.status === 'proposed'
+              ? `<button type="button" class="btn btn-small btn-primary" data-action="propose-quote" data-id="${escapeHTML(q.id)}">${q.status === 'proposed' ? 'Editar proposta' : 'Enviar proposta'}</button>`
+              : q.status === 'accepted'
+                ? `<button type="button" class="btn btn-small btn-primary" data-action="manage-quote-workflow" data-id="${escapeHTML(q.id)}">Abrir orçamento</button>`
+                : '<small>Sem ações disponíveis</small>';
+            return [
+              escapeHTML(q.id),
+              `<strong>${escapeHTML(q.client_name)}</strong><br><small>${escapeHTML(q.client_email || 'E-mail não informado')}</small>${q.client_phone ? `<br><small>${escapeHTML(q.client_phone)}</small>` : ''}${q.client_email ? `<br><a class="text-action" href="mailto:${escapeHTML(q.client_email)}">Enviar e-mail</a>` : ''}${q.client_phone ? `<br><a class="text-action" href="https://wa.me/${escapeHTML((String(q.client_phone).replace(/\\D/g, '').startsWith('55') ? String(q.client_phone).replace(/\\D/g, '') : '55' + String(q.client_phone).replace(/\\D/g, '')))}" target="_blank" rel="noopener noreferrer">Contatar pelo WhatsApp</a>` : ''}`,
+              escapeHTML(q.service_name),
+              escapeHTML(q.customer_notes || 'Sem detalhes adicionais'),
+              q.proposed_amount == null ? 'A definir' : `${money(q.proposed_amount)} · ${escapeHTML(cycleLabel(q.billing_cycle))}${q.proposal_notes ? `<br><small>${escapeHTML(q.proposal_notes)}</small>` : ''}`,
+              escapeHTML(q.valid_until ? dateTime(q.valid_until) : '—'),
+              `<strong>${escapeHTML(statusText)}</strong>${stageText ? `<br><small>Etapa: ${escapeHTML(stageText)}</small>` : ''}`,
+              action
+            ];
+          }))}
       </section>
     `;
   }
@@ -2336,6 +2351,52 @@
         method: 'PATCH',
         body: JSON.stringify({ proposed_amount: amount, billing_cycle: values.billing_cycle, valid_until: values.valid_until || null, proposal_notes: values.proposal_notes || '' })
       });
+    });
+  }
+
+  async function manageQuoteWorkflow(id) {
+    const result = await api('/api/quote-requests');
+    const quote = getArray(result, 'quote_requests').find(item => String(item.id) === String(id));
+    if (!quote) {
+      notify('Orçamento não encontrado. Atualize a lista.', true);
+      return;
+    }
+    if (quote.status !== 'accepted') {
+      notify('O fluxo de contratação só pode começar após o cliente aceitar a proposta.', true);
+      return;
+    }
+
+    const workflow = quote.workflow_status || 'awaiting_contracting';
+    const workflowLabels = {
+      awaiting_contracting: 'Aguardando contratação',
+      in_contracting: 'Em contratação',
+      ready_for_billing: 'Pronto para faturamento'
+    };
+    const summary = `
+      <div class="order-summary">
+        <div><span>Cliente</span><strong>${escapeHTML(quote.client_name || '—')}</strong></div>
+        <div><span>E-mail</span><strong>${escapeHTML(quote.client_email || '—')}</strong></div>
+        <div><span>Telefone</span><strong>${escapeHTML(quote.client_phone || '—')}</strong></div>
+        <div><span>Produto / serviço</span><strong>${escapeHTML(quote.service_name || '—')}</strong></div>
+        <div><span>Necessidade informada</span><strong>${escapeHTML(quote.customer_notes || 'Sem detalhes adicionais')}</strong></div>
+        <div><span>Proposta</span><strong>${escapeHTML(quote.proposed_amount == null ? 'A definir' : money(quote.proposed_amount) + ' · ' + cycleLabel(quote.billing_cycle))}</strong></div>
+        <div><span>Validade</span><strong>${escapeHTML(quote.valid_until ? dateTime(quote.valid_until) : '—')}</strong></div>
+        <div><span>Observações da equipe</span><strong>${escapeHTML(quote.proposal_notes || 'Nenhuma')}</strong></div>
+        <div><span>Etapa atual</span><strong>${escapeHTML(workflowLabels[workflow] || workflowLabels.awaiting_contracting)}</strong></div>
+      </div>
+      <p class="summary-footer">Alterar a etapa não gera fatura, não recebe pagamento e não ativa o serviço. O faturamento e a ativação continuam dependendo de uma ação administrativa separada.</p>
+    `;
+
+    openModal('Acompanhamento do orçamento #' + id, summary + field('Etapa operacional', 'workflow_status', 'text', true, [
+      { value: 'awaiting_contracting', label: 'Aguardando contratação' },
+      { value: 'in_contracting', label: 'Em contratação' },
+      { value: 'ready_for_billing', label: 'Pronto para faturamento' }
+    ], workflow), async values => api('/api/quote-requests/' + encodeURIComponent(id) + '/workflow', {
+      method: 'PATCH',
+      body: JSON.stringify({ workflow_status: values.workflow_status })
+    }), {
+      submitLabel: 'Salvar etapa',
+      successMessage: 'Etapa do orçamento atualizada. Nenhuma fatura ou ativação foi criada.'
     });
   }
 
@@ -3176,6 +3237,10 @@
 
         case 'propose-quote':
           proposeQuote(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+
+        case 'manage-quote-workflow':
+          manageQuoteWorkflow(element.dataset.id).catch(error => notify(error.message, true));
           break;
 
         case 'finance-filter':
