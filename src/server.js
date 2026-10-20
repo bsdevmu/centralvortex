@@ -149,6 +149,30 @@ function validarId(valor) {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
+// Informações personalizadas vinculadas ao serviço contratado e compartilhadas com o Portal.
+let contractedServiceDetailsTableReady;
+async function ensureContractedServiceDetailsTable() {
+  if (!contractedServiceDetailsTableReady) {
+    contractedServiceDetailsTableReady = db.query(`
+      CREATE TABLE IF NOT EXISTS contracted_service_details (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        contracted_service_id BIGINT UNSIGNED NOT NULL,
+        label VARCHAR(80) NOT NULL,
+        value TEXT NOT NULL,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_contracted_service_details_service (contracted_service_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `).catch(error => {
+      contractedServiceDetailsTableReady = null;
+      throw error;
+    });
+  }
+  await contractedServiceDetailsTableReady;
+}
+
 function validarData(valor, permiteNulo = true) {
   if (valor === null || valor === '') {
     return permiteNulo;
@@ -1417,6 +1441,84 @@ app.patch(
 // SERVIÇOS CONTRATADOS — VISÃO GLOBAL DE ATIVAÇÕES
 // Somente administradores. Não expõe dados internos de fornecedores.
 // --------------------------------------------------
+// --------------------------------------------------
+// INFORMAÇÕES PERSONALIZADAS DO SERVIÇO CONTRATADO
+// Somente administradores podem editar; o Portal lê a mesma tabela.
+// --------------------------------------------------
+app.get('/api/contracted-services/:id/details', autenticado, somenteAdmin, async (req, res) => {
+  try {
+    const id = validarId(req.params.id);
+    if (!id) return erro(res, 400, 'Identificador do serviço inválido.');
+    const [services] = await db.query('SELECT id FROM contracted_services WHERE id = ? LIMIT 1', [id]);
+    if (!services.length) return erro(res, 404, 'Serviço contratado não encontrado.');
+
+    await ensureContractedServiceDetailsTable();
+    const [rows] = await db.query(
+      `SELECT id, label, value, sort_order
+       FROM contracted_service_details
+       WHERE contracted_service_id = ?
+       ORDER BY sort_order ASC, id ASC`,
+      [id]
+    );
+    res.set('Cache-Control', 'no-store');
+    return res.json({ details: rows });
+  } catch (e) {
+    console.error('Erro carregar informações do serviço:', e.code || e.message || 'erro');
+    return erro(res, 500, 'Não foi possível carregar as informações deste serviço.');
+  }
+});
+
+app.put('/api/contracted-services/:id/details', autenticado, somenteAdmin, async (req, res) => {
+  let conn;
+  try {
+    const id = validarId(req.params.id);
+    if (!id) return erro(res, 400, 'Identificador do serviço inválido.');
+    const [services] = await db.query('SELECT id FROM contracted_services WHERE id = ? LIMIT 1', [id]);
+    if (!services.length) return erro(res, 404, 'Serviço contratado não encontrado.');
+
+    const details = req.body?.details;
+    if (!Array.isArray(details) || details.length > 30) {
+      return erro(res, 400, 'Envie uma lista com até 30 informações.');
+    }
+
+    const normalized = [];
+    for (const item of details) {
+      const label = typeof item?.label === 'string' ? item.label.trim() : '';
+      const value = typeof item?.value === 'string' ? item.value.trim() : '';
+      if (!label && !value) continue;
+      if (!label || label.length > 80 || value.length > 4000) {
+        return erro(res, 400, 'Cada informação precisa de título de até 80 caracteres e valor de até 4000 caracteres.');
+      }
+      normalized.push({ label, value });
+    }
+
+    await ensureContractedServiceDetailsTable();
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+    await conn.query('DELETE FROM contracted_service_details WHERE contracted_service_id = ?', [id]);
+    for (let index = 0; index < normalized.length; index += 1) {
+      const item = normalized[index];
+      await conn.query(
+        `INSERT INTO contracted_service_details
+          (contracted_service_id, label, value, sort_order)
+         VALUES (?, ?, ?, ?)`,
+        [id, item.label, item.value, index]
+      );
+    }
+    await conn.commit();
+    res.set('Cache-Control', 'no-store');
+    return res.json({ mensagem: 'Informações do serviço salvas.', details: normalized });
+  } catch (e) {
+    if (conn) {
+      try { await conn.rollback(); } catch {}
+    }
+    console.error('Erro salvar informações do serviço:', e.code || e.message || 'erro');
+    return erro(res, 500, 'Não foi possível salvar as informações deste serviço.');
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.get('/api/contracted-services', autenticado, somenteAdmin, async (req, res) => {
   try {
     const [rows] = await db.query(
