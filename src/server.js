@@ -3686,6 +3686,59 @@ async function garantirTabelaCheckoutPro() {
   `);
 }
 
+async function registrarRecebimentoMercadoPago(conn, invoiceId, amount, method, paymentId) {
+  const reference = `mercadopago:${paymentId}`;
+  const valorCentavos = Math.round(Number(amount) * 100);
+
+  const [existingRows] = await conn.query(
+    'SELECT id, invoice_id, amount FROM payments WHERE reference = ? LIMIT 1',
+    [reference]
+  );
+
+  if (existingRows.length) {
+    const existing = existingRows[0];
+    if (
+      Number(existing.invoice_id) !== Number(invoiceId) ||
+      Math.round(Number(existing.amount) * 100) !== valorCentavos
+    ) {
+      const error = new Error('A referência do Mercado Pago já existe vinculada a outra fatura ou valor.');
+      error.code = 'MP_PAYMENT_REFERENCE_CONFLICT';
+      throw error;
+    }
+    return false;
+  }
+
+  try {
+    await conn.query(
+      'INSERT INTO payments (invoice_id, amount, method, reference) VALUES (?, ?, ?, ?)',
+      [invoiceId, amount, method, reference]
+    );
+    return true;
+  } catch (error) {
+    // Outra execução pode inserir a mesma referência após a consulta inicial.
+    // Só tratamos ER_DUP_ENTRY como idempotência após confirmar o registro existente.
+    if (error.code !== 'ER_DUP_ENTRY') throw error;
+
+    const [duplicateRows] = await conn.query(
+      'SELECT id, invoice_id, amount FROM payments WHERE reference = ? LIMIT 1',
+      [reference]
+    );
+    const duplicate = duplicateRows[0];
+
+    if (
+      !duplicate ||
+      Number(duplicate.invoice_id) !== Number(invoiceId) ||
+      Math.round(Number(duplicate.amount) * 100) !== valorCentavos
+    ) {
+      const conflict = new Error('Colisão de referência do Mercado Pago sem recebimento local consistente.');
+      conflict.code = 'MP_PAYMENT_REFERENCE_CONFLICT';
+      throw conflict;
+    }
+
+    return false;
+  }
+}
+
 app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin, async (req, res) => {
   if (!process.env.MP_ACCESS_TOKEN) {
     return erro(res, 503, 'Mercado Pago não configurado: falta MP_ACCESS_TOKEN no ambiente.');
@@ -4088,19 +4141,13 @@ app.post('/api/admin/mercadopago/conciliar/:paymentId', autenticado, somenteAdmi
       ['approved', paymentId]
     );
 
-    const [existingPayments] = await conn.query(
-      'SELECT id FROM payments WHERE reference = ? LIMIT 1',
-      [`mercadopago:${paymentId}`]
+    const paymentRecorded = await registrarRecebimentoMercadoPago(
+      conn,
+      local.invoice_id,
+      expectedAmount,
+      'mercadopago_pix',
+      paymentId
     );
-
-    let paymentRecorded = false;
-    if (!existingPayments.length) {
-      await conn.query(
-        'INSERT INTO payments (invoice_id, amount, method, reference) VALUES (?, ?, ?, ?)',
-        [local.invoice_id, expectedAmount, 'mercadopago_pix', `mercadopago:${paymentId}`]
-      );
-      paymentRecorded = true;
-    }
 
     await conn.query(
       "UPDATE invoices SET status = 'paid' WHERE id = ?",
@@ -4242,21 +4289,13 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
         return erro(res, 409, 'A fatura não corresponde ao valor confirmado pelo Mercado Pago.');
       }
 
-      const [existingPayments] = await conn.query(
-        "SELECT id FROM payments WHERE reference = ? LIMIT 1",
-        [`mercadopago:${payment.id}`]
+      await registrarRecebimentoMercadoPago(
+        conn,
+        local.invoice_id,
+        expectedAmount,
+        local.source === 'checkout_pro' ? 'mercadopago_checkout_pro' : 'mercadopago_pix',
+        payment.id
       );
-      if (!existingPayments.length) {
-        await conn.query(
-          'INSERT INTO payments (invoice_id, amount, method, reference) VALUES (?, ?, ?, ?)',
-          [
-            local.invoice_id,
-            expectedAmount,
-            local.source === 'checkout_pro' ? 'mercadopago_checkout_pro' : 'mercadopago_pix',
-            `mercadopago:${payment.id}`
-          ]
-        );
-      }
       await conn.query("UPDATE invoices SET status = 'paid' WHERE id = ?", [local.invoice_id]);
       const solicitacoesProcessadas = await processarSolicitacoesPagas(conn, local.invoice_id);
       local.solicitacoes_processadas = solicitacoesProcessadas;
