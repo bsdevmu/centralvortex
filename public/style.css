@@ -5513,3 +5513,71 @@ body.premium-hybrid-metallic { background:#DFE3E7; }
  #app-view .vg-dashboard-intro>.stats-grid,#app-view .vg-dashboard-intro>.stats-grid.stats-grid-admin{grid-template-columns:minmax(0,1fr)}
  #app-view .vg-dashboard-intro .stat-card{min-height:110px}
 }
+
+
+/* Correção definitiva do menu lateral em dispositivos móveis */
+@media (max-width: 760px) {
+  #app-view .sidebar {
+    display: flex !important;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(270px, calc(100vw - 54px));
+    max-width: calc(100vw - 54px);
+    height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    transform: translateX(-110%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform .22s ease, visibility .22s ease;
+    z-index: 120;
+  }
+
+  body.sidebar-open #app-view .sidebar {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  #app-view .sidebar-backdrop:not([hidden]) {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(14, 18, 23, .58);
+    cursor: pointer;
+  }
+
+  #app-view .mobile-menu-toggle {
+    display: inline-flex !important;
+    position: relative;
+    z-index: 130;
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  #app-view .main-area {
+    margin-left: 0 !important;
+    min-width: 0;
+  }
+}
+
+@media (min-width: 761px) {
+  #app-view .sidebar {
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+  }
+}
