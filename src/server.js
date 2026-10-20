@@ -754,6 +754,7 @@ app.get('/api/contracted-services/:id/details', autenticado, somenteAdmin, async
       'SELECT id, label, value, sort_order FROM contracted_service_details WHERE contracted_service_id = ? ORDER BY sort_order ASC, id ASC',
       [id]
     );
+    res.set('Cache-Control', 'no-store');
     return res.json({ details: rows });
   } catch (error) {
     console.error('Erro ao consultar informações do serviço:', error.code || error.message || 'erro');
