@@ -1512,7 +1512,7 @@
         [
           'Serviço',
           'Categoria',
-          'Preço',
+          'Preço / modelo',
           'Cobrança',
           'Vitrine principal',
           'Status',
@@ -1528,7 +1528,7 @@
                 ? `${service.parent_category_name} → ${service.linked_category_name}`
                 : service.linked_category_name || service.category || '—'
             ),
-            money(service.price),
+            (service.pricing_mode === 'quote' ? '<strong>Orçamento</strong><br><small>Personalizado</small>' : money(service.price)),
             escapeHTML({
               one_time: 'Única',
               monthly: 'Mensal',
@@ -2265,68 +2265,74 @@
   async function renderOrders() {
     const status = state.orderStatus;
     const query = status === 'all' ? '' : `?status=${encodeURIComponent(status)}`;
-
-    const result = await api(`/api/service-orders${query}`);
+    const [result, quoteResult] = await Promise.all([
+      api(`/api/service-orders${query}`),
+      api('/api/quote-requests')
+    ]);
     const orders = getArray(result, 'orders');
+    const quotes = getArray(quoteResult, 'quote_requests');
     state.cache.orders = orders;
-
-    const tabs = [
-      ['pending', 'Pendentes'],
-      ['approved', 'Aprovadas'],
-      ['rejected', 'Rejeitadas'],
-      ['all', 'Todas']
-    ];
-
+    const tabs = [['pending', 'Pendentes'], ['approved', 'Aprovadas'], ['rejected', 'Rejeitadas'], ['all', 'Todas']];
     content.innerHTML = `
-      ${pageHeader('Solicitações',
-        'Analise os pedidos de serviço feitos pelos clientes no portal.')}
-
+      ${pageHeader('Solicitações', 'Pedidos de contratação e orçamentos personalizados enviados pelos clientes.')}
       <section class="content-card" style="margin-bottom:18px">
         <div class="filter-tabs" role="tablist">
-          ${tabs.map(([value, label]) => `
-            <button type="button" role="tab"
-              class="filter-tab ${status === value ? 'active' : ''}"
-              data-action="orders-filter" data-status="${value}">${label}</button>
-          `).join('')}
+          ${tabs.map(([value, label]) => `<button type="button" role="tab" class="filter-tab ${status === value ? 'active' : ''}" data-action="orders-filter" data-status="${value}">${label}</button>`).join('')}
         </div>
-        <p class="summary-footer">${orders.length} solicitação(ões) exibida(s).</p>
+        <p class="summary-footer">${orders.length} pedido(s) de contratação exibido(s).</p>
       </section>
-
       ${table(['Nº', 'Cliente', 'Serviço', 'Valor', 'Ciclo', 'Pagamento', 'Estado operacional', 'Solicitada em', 'Aprovação', 'Ação'],
         orders.map(order => [
           escapeHTML(order.id),
-          `<strong>${escapeHTML(order.client_name)}</strong>
-           <br><small>${escapeHTML(order.client_email || '—')}</small>`,
-          `${escapeHTML(order.service_name || order.description_snapshot)}
-           ${order.customer_notes
-             ? `<br><small>Cliente: ${escapeHTML(order.customer_notes)}</small>`
-             : ''}`,
+          `<strong>${escapeHTML(order.client_name)}</strong><br><small>${escapeHTML(order.client_email || '—')}</small>`,
+          `${escapeHTML(order.service_name || order.description_snapshot)}${order.customer_notes ? `<br><small>Cliente: ${escapeHTML(order.customer_notes)}</small>` : ''}`,
           money(order.amount_snapshot),
           escapeHTML(cycleLabel(order.billing_cycle_snapshot)),
           paymentStatusLabel(order.payment_status),
           operationalStatusLabel(order.operational_status),
           dateTime(order.created_at),
           statusLabel(order.approval_status),
-          `<div class="quick-actions">
-            ${order.approval_status === 'pending'
-              ? `<button type="button" class="btn btn-small btn-primary"
-                   data-action="review-order" data-id="${escapeHTML(order.id)}">Analisar</button>`
-              : `<small>${escapeHTML(order.reviewed_by_name || 'Automático')}<br>${dateTime(order.reviewed_at)}
-                   ${order.admin_notes ? `<br>“${escapeHTML(order.admin_notes)}”` : ''}</small>`}
-            ${order.contracted_service_id && order.payment_status === 'paid'
-              ? `<button type="button" class="btn btn-small"
-                   data-action="change-operational-status"
-                   data-id="${escapeHTML(order.contracted_service_id)}"
-                   data-status="${escapeHTML(order.operational_status || 'awaiting_payment')}"
-                   data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Atualizar etapa</button>
-                 <button type="button" class="btn btn-small"
-                   data-action="view-operational-history"
-                   data-id="${escapeHTML(order.contracted_service_id)}"
-                   data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Histórico</button>`
-              : ''}
-          </div>`
-        ]))}
+          `<div class="quick-actions">${order.approval_status === 'pending' ? `<button type="button" class="btn btn-small btn-primary" data-action="review-order" data-id="${escapeHTML(order.id)}">Analisar</button>` : `<small>${escapeHTML(order.reviewed_by_name || 'Automático')}<br>${dateTime(order.reviewed_at)} ${order.admin_notes ? `<br>“${escapeHTML(order.admin_notes)}”` : ''}</small>`}${order.contracted_service_id && order.payment_status === 'paid' ? `<button type="button" class="btn btn-small" data-action="change-operational-status" data-id="${escapeHTML(order.contracted_service_id)}" data-status="${escapeHTML(order.operational_status || 'awaiting_payment')}" data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Atualizar etapa</button><button type="button" class="btn btn-small" data-action="view-operational-history" data-id="${escapeHTML(order.contracted_service_id)}" data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Histórico</button>` : ''}</div>`
+        ])}
+      )
+      <section class="content-card" style="margin-top:24px">
+        <div class="panel-heading"><div><h2>Orçamentos personalizados</h2><p>Defina a proposta para Empresas, Sistemas e Gestão Comercial. Nenhuma fatura é criada antes da contratação.</p></div></div>
+        <p class="summary-footer">${quotes.length} orçamento(s) registrado(s).</p>
+        ${table(['Nº', 'Cliente', 'Produto', 'Necessidade informada', 'Proposta', 'Validade', 'Status', 'Ação'],
+          quotes.map(q => [
+            escapeHTML(q.id),
+            `<strong>${escapeHTML(q.client_name)}</strong><br><small>${escapeHTML(q.client_email || '—')}</small>`,
+            escapeHTML(q.service_name),
+            escapeHTML(q.customer_notes || 'Sem detalhes adicionais'),
+            q.proposed_amount == null ? 'A definir' : `${money(q.proposed_amount)} · ${escapeHTML(cycleLabel(q.billing_cycle))}${q.proposal_notes ? `<br><small>${escapeHTML(q.proposal_notes)}</small>` : ''}`,
+            escapeHTML(q.valid_until || '—'),
+            escapeHTML(({requested:'Aguardando orçamento',proposed:'Proposta enviada',accepted:'Aceito pelo cliente',declined:'Recusado pelo cliente',cancelled:'Cancelado'})[q.status] || q.status),
+            q.status === 'requested' || q.status === 'proposed' ? `<button type="button" class="btn btn-small btn-primary" data-action="propose-quote" data-id="${escapeHTML(q.id)}">${q.status === 'proposed' ? 'Editar proposta' : 'Enviar proposta'}</button>` : '<small>Sem ações disponíveis</small>'
+          ])}
+        )
+      </section>
     `;
+  }
+
+  async function proposeQuote(id) {
+    const result = await api('/api/quote-requests');
+    const quote = getArray(result, 'quote_requests').find(item => String(item.id) === String(id));
+    if (!quote) { notify('Orçamento não encontrado. Atualize a lista.', true); return; }
+    openModal('Proposta de orçamento #' + id, [
+      field('Valor proposto (R$)', 'proposed_amount', 'number', true, null, quote.proposed_amount == null ? '' : String(quote.proposed_amount)),
+      field('Periodicidade', 'billing_cycle', 'text', true, [
+        { value: 'one_time', label: 'Pagamento único' }, { value: 'monthly', label: 'Mensal' }, { value: 'yearly', label: 'Anual' }
+      ], quote.billing_cycle || 'one_time'),
+      field('Validade da proposta (opcional)', 'valid_until', 'date', false, null, quote.valid_until || ''),
+      field('Detalhes e condições', 'proposal_notes', 'textarea', false, null, quote.proposal_notes || '')
+    ].join(''), async values => {
+      const amount = Number(values.proposed_amount);
+      if (!Number.isFinite(amount) || amount < 0.01) throw new Error('Informe um valor de proposta maior que zero.');
+      return api('/api/quote-requests/' + encodeURIComponent(id) + '/proposal', {
+        method: 'PATCH',
+        body: JSON.stringify({ proposed_amount: amount, billing_cycle: values.billing_cycle, valid_until: values.valid_until || null, proposal_notes: values.proposal_notes || '' })
+      });
+    });
   }
 
   async function reviewOrder(id) {
@@ -3162,6 +3168,10 @@
 
         case 'review-order':
           reviewOrder(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+
+        case 'propose-quote':
+          proposeQuote(element.dataset.id).catch(error => notify(error.message, true));
           break;
 
         case 'finance-filter':
