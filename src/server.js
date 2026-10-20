@@ -8,6 +8,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const database = require('./database');
+const registerTickets = require('./tickets');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -4106,6 +4107,8 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
 // --------------------------------------------------
 // INTERFACE E ERROS
 // --------------------------------------------------
+
+registerTickets(app, { db, autenticado, validarId, erro });
 
 const publicPath = path.join(__dirname, '../public');
 

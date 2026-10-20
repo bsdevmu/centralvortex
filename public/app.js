@@ -7,6 +7,9 @@
   const state = {
     user: null,
     page: 'dashboard',
+    currentTicketId: null,
+    ticketLastMessageId: null,
+    ticketFilters: { status: 'all', priority: 'all', assigned_to: 'all' },
     clientSearch: '',
     clientStatus: 'all',
     orderStatus: 'pending',
@@ -91,7 +94,7 @@
       credentials: 'same-origin',
       ...options,
       headers: {
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
         ...(options.headers || {})
       }
     });
@@ -354,6 +357,7 @@
       'activations',
       'categories',
       'orders',
+      'tickets',
       'finance',
       'users'
     ];
@@ -397,6 +401,7 @@
       activations: 'Ativações e serviços contratados',
       categories: 'Categorias de serviços',
       orders: 'Solicitações',
+      tickets: 'Atendimento / Tickets',
       finance: 'Financeiro',
       users: 'Usuários'
     };
@@ -431,6 +436,9 @@
           break;
         case 'orders':
           await renderOrders();
+          break;
+        case 'tickets':
+          await renderTickets();
           break;
         case 'finance':
           await renderFinance();
@@ -2369,6 +2377,183 @@
   }
 
   // --------------------------------------------------
+  // ATENDIMENTO / TICKETS
+  // --------------------------------------------------
+
+  const ticketStatusLabel = value => ({
+    open: 'Aberto', in_progress: 'Em atendimento',
+    waiting_customer: 'Aguardando cliente', resolved: 'Resolvido', closed: 'Encerrado'
+  }[value] || value || '—');
+  const ticketPriorityLabel = value => ({
+    low: 'Baixa', normal: 'Normal', high: 'Alta', urgent: 'Urgente'
+  }[value] || value || 'Normal');
+
+  async function renderTickets() {
+    state.currentTicketId = null;
+    const filters = state.ticketFilters || { status: 'all', priority: 'all', assigned_to: 'all' };
+    const params = new URLSearchParams();
+    if (filters.status !== 'all') params.set('status', filters.status);
+    if (filters.priority !== 'all') params.set('priority', filters.priority);
+    if (filters.assigned_to !== 'all') params.set('assigned_to', filters.assigned_to);
+    const [tickets, stats, staff] = await Promise.all([
+      api('/api/tickets' + (params.size ? '?' + params.toString() : '')),
+      api('/api/ticket-stats'),
+      api('/api/ticket-staff')
+    ]);
+    state.cache.tickets = Array.isArray(tickets) ? tickets : [];
+    const list = state.cache.tickets;
+    const people = Array.isArray(staff) ? staff : [];
+    const options = (items, current, placeholder) =>
+      '<option value="all" '+(current==='all'?'selected':'')+'>'+placeholder+'</option>' +
+      items.map(([value,label])=>'<option value="'+escapeHTML(value)+'" '+(String(current)===String(value)?'selected':'')+'>'+escapeHTML(label)+'</option>').join('');
+    content.innerHTML = `
+      ${pageHeader('Atendimento / Tickets', 'Centralize as solicitações abertas no Portal do Cliente e responda pela equipe VortexGrid.')}
+      <div class="stats-grid" style="margin-bottom:20px">
+        ${statCard('Abertos', Number(stats.open || 0), 'Aguardando triagem')}
+        ${statCard('Em atendimento', Number(stats.in_progress || 0), 'Em andamento')}
+        ${statCard('Aguardando cliente', Number(stats.waiting_customer || 0), 'Dependem de retorno')}
+        ${statCard('Resolvidos', Number(stats.resolved || 0), 'Atendimentos concluídos')}
+      </div>
+      <section class="content-card">
+        <div class="card-heading"><div><h2>Fila de atendimento</h2><p>Filtre por status, prioridade ou responsável.</p></div>
+          <button type="button" class="btn" data-action="refresh-tickets">Atualizar</button></div>
+        <div class="form-grid" style="margin:14px 0">
+          <div class="form-field"><label for="ticket-filter-status">Status</label><select id="ticket-filter-status">${options([['open','Aberto'],['in_progress','Em atendimento'],['waiting_customer','Aguardando cliente'],['resolved','Resolvido'],['closed','Encerrado']],filters.status,'Todos os status')}</select></div>
+          <div class="form-field"><label for="ticket-filter-priority">Prioridade</label><select id="ticket-filter-priority">${options([['urgent','Urgente'],['high','Alta'],['normal','Normal'],['low','Baixa']],filters.priority,'Todas as prioridades')}</select></div>
+          <div class="form-field"><label for="ticket-filter-assignee">Responsável</label><select id="ticket-filter-assignee">${options([['unassigned','Sem responsável'],...people.map(p=>[String(p.id),p.name+' ('+(p.role==='admin'?'Administrador':'Equipe')+')'])],filters.assigned_to,'Todos os responsáveis')}</select></div>
+        </div>
+        ${table(['Ticket','Cliente','Assunto / Serviço','Prioridade','Status','Responsável','Atualização','Última mensagem','Mensagens','Ação'], list.map(t => [
+          '<strong>#'+escapeHTML(t.id)+'</strong>',
+          '<strong>'+escapeHTML(t.client_name || 'Cliente')+'</strong><br><small>'+escapeHTML(t.client_email || '—')+'</small>',
+          '<strong>'+escapeHTML(t.subject)+'</strong><br><small>Serviço: '+escapeHTML(t.service_name || 'Não identificado')+'</small>',
+          '<span class="status">'+escapeHTML(ticketPriorityLabel(t.priority))+'</span>',
+          '<span class="status status-'+escapeHTML(t.status)+'">'+escapeHTML(ticketStatusLabel(t.status))+'</span>',
+          escapeHTML(t.assignee_name || 'Não atribuído'),
+          t.last_sender_type === 'client' ? '<span class="status status-open">Última mensagem do cliente</span>' : '<span class="status">'+(t.last_sender_type === 'staff' ? 'Última resposta da equipe' : 'Sem mensagens')+'</span>',
+          dateTime(t.last_message_at),
+          escapeHTML(t.message_count || 0),
+          '<button type="button" class="btn btn-small btn-primary" data-action="open-ticket" data-id="'+escapeHTML(t.id)+'">Atender</button>'
+        ]))}
+        ${list.length ? '' : '<p class="empty-state">Nenhum ticket corresponde aos filtros selecionados.</p>'}
+      </section>
+    `;
+    const bindFilter = (selector, key) => {
+      $(selector)?.addEventListener('change', event => {
+        state.ticketFilters[key] = event.target.value;
+        renderTickets().catch(error => notify(error.message, true));
+      });
+    };
+    bindFilter('#ticket-filter-status', 'status');
+    bindFilter('#ticket-filter-priority', 'priority');
+    bindFilter('#ticket-filter-assignee', 'assigned_to');
+  }
+
+  async function openTicket(id) {
+    const [result, staffResult] = await Promise.all([
+      api('/api/tickets/' + encodeURIComponent(id)),
+      api('/api/ticket-staff')
+    ]);
+    const staff = Array.isArray(staffResult) ? staffResult : [];
+    const ticket = result.ticket;
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    const attachments = Array.isArray(result.attachments) ? result.attachments : [];
+    state.currentTicketId = ticket.id;
+    state.ticketLastMessageId = messages.length ? messages[messages.length - 1].id : null;
+    content.innerHTML = `
+      <div class="page-heading"><div><h2>Ticket #${escapeHTML(ticket.id)} — ${escapeHTML(ticket.subject)}</h2><p>${escapeHTML(ticket.client_name || 'Cliente')} · ${escapeHTML(ticket.client_email || '')}</p></div>
+        <button type="button" class="btn" data-action="tickets-back">← Voltar aos tickets</button></div>
+      <section class="content-card" style="margin-bottom:18px">
+        <div class="form-grid">
+          <div class="form-field"><label>Serviço relacionado</label><input value="${escapeHTML(ticket.service_name || 'Não identificado')}" disabled></div>
+          <div class="form-field"><label for="ticket-status-select">Status</label><select id="ticket-status-select">
+            ${[['open','Aberto'],['in_progress','Em atendimento'],['waiting_customer','Aguardando cliente'],['resolved','Resolvido'],['closed','Encerrado']].map(([v,l])=>'<option value="'+v+'" '+(ticket.status===v?'selected':'')+'>'+l+'</option>').join('')}
+          </select></div>
+          <div class="form-field"><label for="ticket-priority-select">Prioridade</label><select id="ticket-priority-select">
+            ${[['low','Baixa'],['normal','Normal'],['high','Alta'],['urgent','Urgente']].map(([v,l])=>'<option value="'+v+'" '+(ticket.priority===v?'selected':'')+'>'+l+'</option>').join('')}
+          </select></div>
+          <div class="form-field"><label for="ticket-assignee-select">Responsável</label><select id="ticket-assignee-select">
+            <option value="" ${ticket.assigned_to ? '' : 'selected'}>Não atribuído</option>
+            ${staff.map(person=>'<option value="'+escapeHTML(person.id)+'" '+(String(ticket.assigned_to||'')===String(person.id)?'selected':'')+'>'+escapeHTML(person.name)+' ('+(person.role==='admin'?'Administrador':'Equipe')+')</option>').join('')}
+          </select></div>
+          <div class="form-field"><label>Categoria</label><input value="${escapeHTML(({general:'Geral',billing:'Financeiro',service:'Serviço',technical:'Técnico',account:'Conta'})[ticket.category] || ticket.category)}" disabled></div>
+          <div class="form-field"><label>Aberto em</label><input value="${escapeHTML(dateTime(ticket.created_at))}" disabled></div>
+        </div>
+        <button type="button" class="btn btn-primary" data-action="save-ticket-settings" data-id="${escapeHTML(ticket.id)}">Salvar alterações</button>
+      </section>
+      <section class="content-card">
+        <div class="card-heading"><div><h2>Conversa</h2><p>Histórico completo entre cliente e equipe.</p></div></div>
+        <div class="ticket-conversation" style="display:grid;gap:12px;margin:18px 0">
+          ${messages.map(m=>'<article style="padding:14px;border:1px solid var(--border-color, #ddd);border-radius:10px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><strong>'+escapeHTML(m.sender_name)+' · '+(m.sender_type==='client'?'Cliente':'Equipe')+'</strong><small>'+escapeHTML(dateTime(m.created_at))+'</small></div><p style="white-space:pre-wrap;margin:10px 0 0">'+escapeHTML(m.message)+'</p></article>').join('')}
+        </div>
+        <div class="ticket-attachments" style="margin:14px 0">
+          <h3>Anexos</h3>
+          ${attachments.length ? '<ul>'+attachments.map(a=>'<li><a href="/api/tickets/'+encodeURIComponent(ticket.id)+'/attachments/'+encodeURIComponent(a.id)+'">'+escapeHTML(a.original_name)+'</a> <small>('+Math.max(1,Math.round(Number(a.size_bytes||0)/1024))+' KB · '+(a.uploaded_by_type==='client'?'Cliente':'Equipe')+')</small></li>').join('')+'</ul>' : '<p class="empty-state">Nenhum anexo neste ticket.</p>'}
+        </div>
+        ${ticket.status === 'closed' ? '<p class="empty-state">Este ticket está encerrado. Altere o status para reabrir e responder.</p>' : `
+          <form id="ticket-reply-form" class="form-field">
+            <label for="ticket-reply-message">Sua resposta</label>
+            <textarea id="ticket-reply-message" name="message" rows="5" maxlength="5000" required placeholder="Escreva uma resposta clara para o cliente..."></textarea>
+            <label for="ticket-reply-file">Anexo (opcional)</label>
+            <input id="ticket-reply-file" name="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.txt">
+            <small>PDF, PNG, JPG ou TXT · até 5 MB.</small>
+            <button class="btn btn-primary" type="submit">Enviar resposta ao cliente</button>
+          </form>`}
+      </section>`;
+    const form = $('#ticket-reply-form');
+    form?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const message = $('#ticket-reply-message')?.value.trim();
+      const file = $('#ticket-reply-file')?.files?.[0];
+      if (!message) return;
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        await api('/api/tickets/' + encodeURIComponent(ticket.id) + '/messages', { method:'POST', body:JSON.stringify({message}) });
+        if (file) {
+          const formData = new FormData();
+          formData.append('file', file);
+          await api('/api/tickets/' + encodeURIComponent(ticket.id) + '/attachments', { method:'POST', body:formData });
+        }
+        notify(file ? 'Resposta e anexo enviados ao cliente.' : 'Resposta enviada ao cliente.');
+        await openTicket(ticket.id);
+      } catch (error) { notify(error.message, true); button.disabled = false; }
+    });
+  }
+
+  async function saveTicketSettings(id) {
+    const status = $('#ticket-status-select')?.value;
+    const priority = $('#ticket-priority-select')?.value;
+    const assigned_to = $('#ticket-assignee-select')?.value || null;
+    await api('/api/tickets/' + encodeURIComponent(id), { method:'PATCH', body:JSON.stringify({status,priority,assigned_to}) });
+    notify('Ticket atualizado.');
+    await openTicket(id);
+  }
+
+  async function atualizarConversaTicketSilenciosa() {
+    const id = state.currentTicketId;
+    if (!id || state.page !== 'tickets') return;
+    const result = await api('/api/tickets/' + encodeURIComponent(id));
+    if (String(state.currentTicketId) !== String(id)) return;
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    const attachments = Array.isArray(result.attachments) ? result.attachments : [];
+    const conversation = content.querySelector('.ticket-conversation');
+    if (conversation) {
+      conversation.innerHTML = messages.map(m=>'<article style="padding:14px;border:1px solid var(--border-color, #ddd);border-radius:10px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><strong>'+escapeHTML(m.sender_name)+' · '+(m.sender_type==='client'?'Cliente':'Equipe')+'</strong><small>'+escapeHTML(dateTime(m.created_at))+'</small></div><p style="white-space:pre-wrap;margin:10px 0 0">'+escapeHTML(m.message)+'</p></article>').join('');
+    }
+    const attachmentPanel = content.querySelector('.ticket-attachments');
+    if (attachmentPanel) {
+      attachmentPanel.innerHTML = '<h3>Anexos</h3>' + (attachments.length ? '<ul>'+attachments.map(a=>'<li><a href="/api/tickets/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(a.id)+'">'+escapeHTML(a.original_name)+'</a> <small>('+Math.max(1,Math.round(Number(a.size_bytes||0)/1024))+' KB · '+(a.uploaded_by_type==='client'?'Cliente':'Equipe')+')</small></li>').join('')+'</ul>' : '<p class="empty-state">Nenhum anexo neste ticket.</p>');
+    }
+    if (messages.length) {
+      const latest = messages[messages.length - 1];
+      if (state.ticketLastMessageId && String(latest.id) !== String(state.ticketLastMessageId) && latest.sender_type === 'client') {
+        notify('Nova mensagem do cliente no ticket #' + id + '.');
+      }
+      state.ticketLastMessageId = latest.id;
+    }
+  }
+
+  // --------------------------------------------------
   // USUÁRIOS
   // --------------------------------------------------
 
@@ -3029,6 +3214,20 @@
 
     try {
       switch (action) {
+        case 'open-ticket':
+          openTicket(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+        case 'refresh-tickets':
+          renderTickets().catch(error => notify(error.message, true));
+          break;
+        case 'tickets-back':
+          state.currentTicketId = null;
+          navigate('tickets');
+          break;
+        case 'save-ticket-settings':
+          saveTicketSettings(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+
         case 'new-client':
           createClient();
           break;
@@ -3424,6 +3623,16 @@
   collapseButton?.addEventListener('click',()=>{const on=document.body.classList.toggle('sidebar-collapsed');collapseButton.setAttribute('aria-pressed',String(on));collapseButton.setAttribute('aria-label',on?'Expandir menu':'Recolher menu');collapseButton.title=on?'Expandir menu':'Recolher menu';const l=collapseButton.querySelector('.collapse-toggle-label');if(l)l.textContent=on?'Expandir menu':'Recolher menu';const i=collapseButton.querySelector('span[aria-hidden="true"]');if(i)i.textContent=on?'›':'‹';try{localStorage.setItem('vortexgrid-sidebar-collapsed',on?'1':'0');}catch{}});
   try{if(localStorage.getItem('vortexgrid-sidebar-collapsed')==='1'){document.body.classList.add('sidebar-collapsed');collapseButton?.setAttribute('aria-pressed','true');collapseButton?.setAttribute('aria-label','Expandir menu');if(collapseButton)collapseButton.title='Expandir menu';const l=collapseButton?.querySelector('.collapse-toggle-label');if(l)l.textContent='Expandir menu';const i=collapseButton?.querySelector('span[aria-hidden="true"]');if(i)i.textContent='›';}}catch{}
   document.addEventListener('keydown',e=>{const k=e.key.toLowerCase();if((e.ctrlKey||e.metaKey)&&k==='k'){e.preventDefault();globalSearchInput?.focus();globalSearchInput?.select();}else if(k==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();globalSearchInput?.focus();}else if(e.key==='Escape'){closeGlobalSearch();closeShortcuts();}});
+
+  // Atualiza a fila automaticamente quando a equipe está na lista de tickets.
+  window.setInterval(() => {
+    if (!state.user || state.page !== 'tickets') return;
+    if (state.currentTicketId) {
+      atualizarConversaTicketSilenciosa().catch(() => {});
+    } else {
+      renderTickets().catch(error => notify(error.message, true));
+    }
+  }, 30000);
 
   init();
 })();
