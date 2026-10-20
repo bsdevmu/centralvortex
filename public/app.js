@@ -3076,6 +3076,26 @@
 
 
   const globalSearchInput=$('#global-search-input'),globalSearchResults=$('#global-search-results'),globalSearchWrap=$('#global-search-wrap'),shortcutsButton=$('#shortcuts-button'),shortcutsMenu=$('#shortcuts-menu'),alertsButton=$('#header-alerts-button'),collapseButton=$('#sidebar-collapse-toggle');
+  const mobileMenuButton = $('#mobile-menu-toggle');
+  const mobileSidebarBackdrop = $('#sidebar-backdrop');
+  function setMobileSidebarOpen(open) {
+    document.body.classList.toggle('sidebar-open', Boolean(open));
+    mobileMenuButton?.setAttribute('aria-expanded', String(Boolean(open)));
+    mobileMenuButton?.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+    if (mobileSidebarBackdrop) mobileSidebarBackdrop.hidden = !open;
+  }
+  mobileMenuButton?.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    setMobileSidebarOpen(!document.body.classList.contains('sidebar-open'));
+  });
+  mobileSidebarBackdrop?.addEventListener('click', () => setMobileSidebarOpen(false));
+  document.querySelectorAll('#sidebar [data-page]').forEach(item => {
+    item.addEventListener('click', () => setMobileSidebarOpen(false));
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') setMobileSidebarOpen(false);
+  });
   let globalSearchTimer=null,globalSearchRequest=0;
   function updateHeaderAlerts(d){const b=$('#header-alerts-badge');if(!b||state.user?.role!=='admin')return;const n=Number(d?.faturasVencidas||0)+Number(d?.ativacoesPendentes||0)+Number(d?.solicitacoesPendentes||0);b.textContent=n>99?'99+':String(n);b.hidden=n<=0;}
   function closeGlobalSearch(){if(globalSearchResults)globalSearchResults.hidden=true;globalSearchInput?.setAttribute('aria-expanded','false');}
