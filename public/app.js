@@ -2306,7 +2306,7 @@
         ${table(['Nº', 'Cliente', 'Produto', 'Necessidade informada', 'Proposta', 'Validade', 'Status', 'Ação'],
           quotes.map(q => [
             escapeHTML(q.id),
-            `<strong>${escapeHTML(q.client_name)}</strong><br><small>${escapeHTML(q.client_email || 'E-mail não informado')}</small>${q.client_phone ? `<br><small>${escapeHTML(q.client_phone)}</small>` : ''}${q.client_email ? `<br><a class="text-action" href="mailto:${escapeHTML(q.client_email)}">Enviar e-mail</a>` : ''}${q.client_phone ? `<br><a class="text-action" href="https://wa.me/${escapeHTML(String(q.client_phone).replace(/\\D/g, ''))}" target="_blank" rel="noopener noreferrer">Contatar pelo WhatsApp</a>` : ''}`,
+            `<strong>${escapeHTML(q.client_name)}</strong><br><small>${escapeHTML(q.client_email || 'E-mail não informado')}</small>${q.client_phone ? `<br><small>${escapeHTML(q.client_phone)}</small>` : ''}${q.client_email ? `<br><a class="text-action" href="mailto:${escapeHTML(q.client_email)}">Enviar e-mail</a>` : ''}${q.client_phone ? `<br><a class="text-action" href="https://wa.me/${escapeHTML((String(q.client_phone).replace(/\D/g, '').startsWith('55') ? String(q.client_phone).replace(/\D/g, '') : '55' + String(q.client_phone).replace(/\D/g, '')))}" target="_blank" rel="noopener noreferrer">Contatar pelo WhatsApp</a>` : ''}`,
             escapeHTML(q.service_name),
             escapeHTML(q.customer_notes || 'Sem detalhes adicionais'),
             q.proposed_amount == null ? 'A definir' : `${money(q.proposed_amount)} · ${escapeHTML(cycleLabel(q.billing_cycle))}${q.proposal_notes ? `<br><small>${escapeHTML(q.proposal_notes)}</small>` : ''}`,
