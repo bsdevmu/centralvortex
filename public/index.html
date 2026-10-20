@@ -22,9 +22,9 @@
     rel="stylesheet"
   >
 
-  <link rel="stylesheet" href="/style.css?v=20261020-1">
+  <link rel="stylesheet" href="/style.css?v=20261020-2">
 
-  <script src="/app.js?v=20261020-1" defer></script>
+  <script src="/app.js?v=20261020-2" defer></script>
 </head>
 
 <body class="premium-hybrid-metallic">
@@ -248,7 +248,7 @@
 
       <header class="topbar">
 
-        <button type="button" id="mobile-menu-toggle" class="mobile-menu-toggle" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false">
+        <button type="button" id="mobile-menu-toggle" class="mobile-menu-toggle" onclick="window.toggleMobileSidebar && window.toggleMobileSidebar(event)" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false">
           <span></span><span></span><span></span>
         </button>
 
@@ -321,13 +321,20 @@
       };
 
       if (menuButton && sidebarBackdrop) {
-        menuButton.addEventListener('click', () => {
-          const isOpen = document.body.classList.toggle('sidebar-open');
+        // Função global para permitir acionamento direto pelo botão no mobile.
+        window.toggleMobileSidebar = (event) => {
+          if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+          const isOpen = !document.body.classList.contains('sidebar-open');
+          document.body.classList.toggle('sidebar-open', isOpen);
           menuButton.setAttribute('aria-expanded', String(isOpen));
           menuButton.setAttribute('aria-label', isOpen ? 'Fechar menu' : 'Abrir menu');
           sidebarBackdrop.hidden = !isOpen;
-        });
+        };
 
+        // O botão usa onclick direto; a camada de fundo fecha o menu.
         sidebarBackdrop.addEventListener('click', closeMenu);
         document.querySelectorAll('.sidebar [data-page]').forEach((item) => {
           item.addEventListener('click', closeMenu);
