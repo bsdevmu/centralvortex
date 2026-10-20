@@ -5587,3 +5587,22 @@ body.premium-hybrid-metallic { background:#DFE3E7; }
 .ticket-conversation article { background: var(--surface, #fff); }
 #ticket-reply-form textarea { width: 100%; resize: vertical; }
 #ticket-status-select, #ticket-priority-select { width: 100%; }
+
+/* Atendimento / tickets — anexos */
+.ticket-attachments {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color, rgba(148,163,184,.22));
+}
+.ticket-attachments ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 20px;
+}
+.ticket-attachments a {
+  color: var(--primary, #7dd3fc);
+  overflow-wrap: anywhere;
+}
+.ticket-attachments small {
+  color: var(--muted, #94a3b8);
+}
+
