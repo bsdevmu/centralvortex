@@ -2287,8 +2287,6 @@ app.post('/api/services', autenticado, somenteAdmin, async (req, res) => {
 
     let pricingMode = 'fixed';
 
-    let pricingMode = 'fixed';
-
     if (
       body.category_id !== undefined &&
       body.category_id !== null &&
