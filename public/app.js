@@ -2670,7 +2670,7 @@
         field('Nome do serviço', 'name'),
         field('Descrição', 'description', 'textarea', false),
         field('Categoria / subcategoria', 'category_id', 'text', true, categoryOptions, ''),
-        field('Preço (R$)', 'price', 'number'),
+        field('Preço de referência (R$) — não exibido em categorias de orçamento', 'price', 'number', false, null, '0'),
         field('Ciclo de cobrança', 'billing_cycle', 'text', true, [
           { value: 'one_time', label: 'Cobrança única' },
           { value: 'monthly', label: 'Mensal' },
@@ -2762,7 +2762,7 @@
         field('Nome do serviço', 'name', 'text', true, null, service.name || ''),
         field('Descrição', 'description', 'textarea', false, null, service.description || ''),
         field('Categoria / subcategoria', 'category_id', 'text', true, categoryOptions, selectedId),
-        field('Preço (R$)', 'price', 'number', true, null, String(service.price ?? 0)),
+        field('Preço de referência (R$) — não exibido em categorias de orçamento', 'price', 'number', true, null, String(service.price ?? 0)),
         field('Ciclo de cobrança', 'billing_cycle', 'text', true, [
           { value: 'one_time', label: 'Cobrança única' },
           { value: 'monthly', label: 'Mensal' },
