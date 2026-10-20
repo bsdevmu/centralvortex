@@ -3487,7 +3487,7 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
 
     if (!local) {
       const externalReference = String(payment.external_reference || '');
-      const match = externalReference.match(/^vortexgrid-invoice-(\\d+)$/);
+      const match = externalReference.match(/^vortexgrid-invoice-(\d+)$/);
       const referencedInvoiceId = match ? Number(match[1]) : 0;
 
       if (referencedInvoiceId > 0) {
