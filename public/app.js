@@ -2388,6 +2388,7 @@
   }[value] || value || 'Normal');
 
   async function renderTickets() {
+    state.currentTicketId = null;
     const filters = state.ticketFilters || { status: 'all', priority: 'all', assigned_to: 'all' };
     const params = new URLSearchParams();
     if (filters.status !== 'all') params.set('status', filters.status);
@@ -3194,6 +3195,7 @@
           renderTickets().catch(error => notify(error.message, true));
           break;
         case 'tickets-back':
+          state.currentTicketId = null;
           navigate('tickets');
           break;
         case 'save-ticket-settings':
@@ -3595,6 +3597,13 @@
   collapseButton?.addEventListener('click',()=>{const on=document.body.classList.toggle('sidebar-collapsed');collapseButton.setAttribute('aria-pressed',String(on));collapseButton.setAttribute('aria-label',on?'Expandir menu':'Recolher menu');collapseButton.title=on?'Expandir menu':'Recolher menu';const l=collapseButton.querySelector('.collapse-toggle-label');if(l)l.textContent=on?'Expandir menu':'Recolher menu';const i=collapseButton.querySelector('span[aria-hidden="true"]');if(i)i.textContent=on?'›':'‹';try{localStorage.setItem('vortexgrid-sidebar-collapsed',on?'1':'0');}catch{}});
   try{if(localStorage.getItem('vortexgrid-sidebar-collapsed')==='1'){document.body.classList.add('sidebar-collapsed');collapseButton?.setAttribute('aria-pressed','true');collapseButton?.setAttribute('aria-label','Expandir menu');if(collapseButton)collapseButton.title='Expandir menu';const l=collapseButton?.querySelector('.collapse-toggle-label');if(l)l.textContent='Expandir menu';const i=collapseButton?.querySelector('span[aria-hidden="true"]');if(i)i.textContent='›';}}catch{}
   document.addEventListener('keydown',e=>{const k=e.key.toLowerCase();if((e.ctrlKey||e.metaKey)&&k==='k'){e.preventDefault();globalSearchInput?.focus();globalSearchInput?.select();}else if(k==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();globalSearchInput?.focus();}else if(e.key==='Escape'){closeGlobalSearch();closeShortcuts();}});
+
+  // Atualiza a fila automaticamente quando a equipe está na lista de tickets.
+  window.setInterval(() => {
+    if (state.user && state.page === 'tickets' && !state.currentTicketId) {
+      renderTickets().catch(error => notify(error.message, true));
+    }
+  }, 30000);
 
   init();
 })();
