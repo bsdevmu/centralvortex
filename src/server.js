@@ -2821,6 +2821,8 @@ app.get('/api/invoices', autenticado, async (req, res) => {
 });
 
 app.post('/api/invoices', autenticado, somenteAdmin, async (req, res) => {
+  let conn;
+
   try {
     const {
       client_id,
@@ -2844,31 +2846,55 @@ app.post('/api/invoices', autenticado, somenteAdmin, async (req, res) => {
       );
     }
 
-    const [clients] = await db.query(
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const [clients] = await conn.query(
       `SELECT id
        FROM clients
-       WHERE id = ? AND status = 'active'`,
+       WHERE id = ? AND status = 'active'
+       FOR UPDATE`,
       [clientId]
     );
 
     if (!clients.length) {
+      await conn.rollback();
       return erro(res, 404, 'Cliente ativo não encontrado.');
     }
 
-    const [result] = await db.query(
+    const [result] = await conn.query(
       `INSERT INTO invoices
         (client_id, description, amount, status, due_date)
        VALUES (?, ?, ?, 'pending', ?)`,
       [clientId, description.trim(), Number(amount), due_date || null]
     );
 
+    // Se a fatura foi criada para pedidos do checkout, vincula-os
+    // imediatamente, antes do pagamento. A função só vincula quando
+    // cliente, IDs e soma dos pedidos conferem exatamente com a fatura.
+    const pedidosVinculados = await vincularSolicitacoesDaFatura(
+      conn,
+      result.insertId
+    );
+
+    await conn.commit();
+
     return res.status(201).json({
       id: result.insertId,
+      pedidos_vinculados: pedidosVinculados.length,
       mensagem: 'Fatura criada.'
     });
   } catch (e) {
+    if (conn) {
+      await conn.rollback().catch(() => {});
+    }
+
     console.error('Erro criar fatura:', e.code || e.message || 'erro');
     return erro(res, 500, 'Não foi possível criar a fatura.');
+  } finally {
+    if (conn) {
+      conn.release();
+    }
   }
 });
 
