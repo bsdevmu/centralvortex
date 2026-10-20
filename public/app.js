@@ -13,6 +13,7 @@
     financeStatus: 'all',
     financeSearch: '',
     currentClientId: null,
+    globalSearchCache: null,
     cache: {
       clients: [],
       services: [],
@@ -110,6 +111,13 @@
       );
     }
 
+    // Invalida resultados globais após qualquer operação de escrita, evitando
+    // que a busca continue exibindo dados antigos após cadastros/edições.
+    const method = String(options.method || 'GET').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      state.globalSearchCache = null;
+    }
+
     return data;
   }
 
@@ -170,7 +178,7 @@
     if (loginView) loginView.hidden = true;
     if (app) app.hidden = false;
     updateUserInfo();
-    navigate('dashboard');
+    navigate(state.user?.role === 'admin' ? 'dashboard' : 'finance');
   }
 
   function updateUserInfo() {
@@ -183,17 +191,28 @@
       el.textContent = name;
     });
 
+    document.querySelectorAll('.sidebar-user-info small').forEach(el => {
+      el.textContent = state.user?.role === 'admin' ? 'Administrador' : 'Operador';
+    });
+
     document.querySelectorAll(
       '[data-user-email], #user-email, .user-email'
     ).forEach(el => {
       el.textContent = email;
     });
 
-    document.querySelectorAll(
-      '[data-page="users"], [data-page="orders"]'
-    ).forEach(el => {
-      el.hidden = state.user?.role !== 'admin';
+    const isAdmin = state.user?.role === 'admin';
+
+    document.querySelectorAll('[data-page]').forEach(el => {
+      el.hidden = isAdmin ? false : el.dataset.page !== 'finance';
     });
+
+    document.querySelectorAll('[data-action="my-account"]').forEach(el => {
+      el.hidden = !isAdmin;
+    });
+
+    const adminGroup = $('#users-nav');
+    if (adminGroup) adminGroup.hidden = !isAdmin;
   }
 
   function setLoading(message = 'Carregando...') {
@@ -237,7 +256,7 @@
         ${buttonText ? `
           <button type="button" class="btn btn-primary"
             data-action="${escapeHTML(action)}">
-            <span aria-hidden="true">+</span>
+            <span aria-hidden="true">${action === 'refresh-dashboard' ? '↻' : '+'}</span>
             ${escapeHTML(buttonText)}
           </button>
         ` : ''}
@@ -313,8 +332,13 @@
 
     if (!allowed.includes(page)) page = 'dashboard';
 
-    if (page === 'orders' && state.user?.role !== 'admin') {
-      notify('Apenas administradores podem analisar solicitações.', true);
+    if (state.user?.role !== 'admin' && page !== 'finance') {
+      notify('Operadores podem acessar apenas o financeiro.', true);
+      return;
+    }
+
+    if (['orders', 'services'].includes(page) && state.user?.role !== 'admin') {
+      notify('Esta área é restrita a administradores.', true);
       return;
     }
 
@@ -447,38 +471,193 @@
 
   async function renderDashboard() {
     const data = await api('/api/dashboard');
+    updateHeaderAlerts(data);
     const isAdmin = state.user?.role === 'admin';
 
     const clientes = Number(data.clientes ?? 0);
     const servicos = Number(data.servicos ?? 0);
+    const servicosCatalogo = Number(data.servicosCatalogo ?? 0);
+    const ativacoesPendentes = Number(data.ativacoesPendentes ?? 0);
     const pendentes = Number(data.faturasPendentes ?? 0);
     const valorPendente = Number(data.valorPendente ?? 0);
     const recebido = Number(data.recebidoMes ?? 0);
     const vencidas = Number(data.faturasVencidas ?? 0);
     const valorVencido = Number(data.valorVencido ?? 0);
+    const valorEmDia = Math.max(0, valorPendente - valorVencido);
+    const percentualVencido = valorPendente > 0
+      ? Math.min(100, Math.round((valorVencido / valorPendente) * 100))
+      : 0;
+    const percentualEmDia = 100 - percentualVencido;
     const solicitacoes = Number(data.solicitacoesPendentes ?? 0);
     const serie = Array.isArray(data.recebimentosMensais) ? data.recebimentosMensais : [];
     const faturas = Array.isArray(data.ultimasFaturas) ? data.ultimasFaturas : [];
     const pedidos = Array.isArray(data.solicitacoesRecentes) ? data.solicitacoesRecentes : [];
+    const atividades = Array.isArray(data.atividadeRecente) ? data.atividadeRecente : [];
+
+    const alertas = [];
+
+    if (vencidas > 0) {
+      alertas.push({
+        nivel: 'danger',
+        titulo: vencidas === 1 ? 'Fatura vencida' : 'Faturas vencidas',
+        descricao: `${vencidas.toLocaleString('pt-BR')} fatura(s) com vencimento ultrapassado · ${money(valorVencido)}`,
+        acao: 'Abrir financeiro',
+        pagina: 'finance'
+      });
+    }
+
+    const faturasNaoVencidas = Math.max(0, pendentes - vencidas);
+    if (faturasNaoVencidas > 0) {
+      alertas.push({
+        nivel: 'warning',
+        titulo: 'Cobranças em aberto',
+        descricao: `${faturasNaoVencidas.toLocaleString('pt-BR')} fatura(s) pendente(s) sem atraso identificado`,
+        acao: 'Ver faturas',
+        pagina: 'finance'
+      });
+    }
+
+    if (isAdmin && ativacoesPendentes > 0) {
+      alertas.push({
+        nivel: 'info',
+        titulo: 'Ativações aguardando andamento',
+        descricao: `${ativacoesPendentes.toLocaleString('pt-BR')} serviço(s) pendente(s) ou em provisionamento`,
+        acao: 'Gerenciar serviços',
+        pagina: 'services'
+      });
+    }
+
+    if (isAdmin && solicitacoes > 0) {
+      alertas.push({
+        nivel: 'warning',
+        titulo: 'Solicitações aguardando análise',
+        descricao: `${solicitacoes.toLocaleString('pt-BR')} pedido(s) aguardando decisão administrativa`,
+        acao: 'Analisar solicitações',
+        pagina: 'orders'
+      });
+    }
+
+    const alertasMarkup = alertas.length
+      ? `
+        <section class="alert-center content-card" aria-labelledby="alert-center-title">
+          <div class="panel-heading">
+            <div>
+              <span class="section-eyebrow">CENTRAL DE ATENÇÃO</span>
+              <h2 id="alert-center-title">Pontos que precisam de atenção</h2>
+              <p>Prioridades identificadas a partir dos registros atuais do sistema.</p>
+            </div>
+            <span class="alert-count">${alertas.length} ${alertas.length === 1 ? 'alerta' : 'alertas'}</span>
+          </div>
+          <div class="alert-list">
+            ${alertas.map(alerta => `
+              <article class="dashboard-alert dashboard-alert-${alerta.nivel}">
+                <span class="dashboard-alert-symbol" aria-hidden="true">${alerta.nivel === 'danger' ? '!' : alerta.nivel === 'warning' ? '◷' : '↗'}</span>
+                <div class="dashboard-alert-copy">
+                  <strong>${escapeHTML(alerta.titulo)}</strong>
+                  <p>${escapeHTML(alerta.descricao)}</p>
+                </div>
+                <button type="button" class="btn btn-small" data-page="${escapeHTML(alerta.pagina)}">${escapeHTML(alerta.acao)} <span aria-hidden="true">→</span></button>
+              </article>
+            `).join('')}
+          </div>
+        </section>
+      `
+      : `
+        <section class="alert-center content-card alert-center-clear" aria-label="Status operacional">
+          <span class="alert-clear-icon" aria-hidden="true">✓</span>
+          <div>
+            <strong>Nenhum alerta prioritário identificado</strong>
+            <p>Não há cobranças em atraso ou pendências operacionais nos indicadores consultados.</p>
+          </div>
+          <span class="alert-count">Operação monitorada</span>
+        </section>
+      `;
 
     content.innerHTML = `
       ${pageHeader(
         'Visão geral',
         `Olá, ${state.user?.name || 'Administrador'}. Estes são os principais indicadores da operação.`
+      ,
+        'Atualizar dados',
+        'refresh-dashboard'
       )}
 
-      <section class="stats-grid">
+      ${alertasMarkup}
+
+      <section class="stats-grid ${isAdmin ? 'stats-grid-admin' : ''}">
         ${statCard('Recebido neste mês', money(recebido),
           'Pagamentos registrados no mês atual', 'R$')}
         ${statCard('Em aberto', money(valorPendente),
-          `${pendentes.toLocaleString('pt-BR')} fatura(s) pendente(s) ou vencida(s)`, '▤')}
+          `${pendentes.toLocaleString('pt-BR')} fatura(s); inclui as vencidas`, '▤')}
         ${statCard('Vencidas', money(valorVencido),
           `${vencidas.toLocaleString('pt-BR')} fatura(s) com vencimento ultrapassado`, '!')}
         ${isAdmin
-          ? statCard('Solicitações pendentes', solicitacoes.toLocaleString('pt-BR'),
-              'Pedidos de clientes aguardando análise', '✓')
+          ? statCard('Aguardando ativação', ativacoesPendentes.toLocaleString('pt-BR'),
+              'Contratos pendentes ou em provisionamento', '◷')
           : statCard('Clientes ativos', clientes.toLocaleString('pt-BR'),
               'Clientes com cadastro ativo', '♙')}
+        ${isAdmin
+          ? statCard('Solicitações pendentes', solicitacoes.toLocaleString('pt-BR'),
+              'Pedidos de clientes aguardando análise', '✓')
+          : ''}
+
+      </section>
+
+      <section class="content-card financial-overview" aria-labelledby="financial-overview-title">
+        <div class="panel-heading financial-overview-heading">
+          <div>
+            <span class="section-eyebrow">VISÃO FINANCEIRA</span>
+            <h2 id="financial-overview-title">Resumo financeiro</h2>
+            <p>Valores calculados a partir das faturas e dos pagamentos registrados.</p>
+          </div>
+          <button type="button" class="btn btn-small" data-page="finance">Abrir financeiro <span aria-hidden="true">→</span></button>
+        </div>
+
+        <div class="financial-summary-grid">
+          <div class="financial-summary-item">
+            <span class="financial-summary-label"><span class="financial-dot financial-dot-success"></span>Recebido neste mês</span>
+            <strong>${escapeHTML(money(recebido))}</strong>
+            <small>Pagamentos registrados no mês atual</small>
+          </div>
+          <div class="financial-summary-item">
+            <span class="financial-summary-label"><span class="financial-dot financial-dot-neutral"></span>Total em aberto</span>
+            <strong>${escapeHTML(money(valorPendente))}</strong>
+            <small>${pendentes.toLocaleString('pt-BR')} fatura(s) pendente(s) ou vencida(s)</small>
+          </div>
+          <div class="financial-summary-item">
+            <span class="financial-summary-label"><span class="financial-dot financial-dot-danger"></span>Valor vencido</span>
+            <strong>${escapeHTML(money(valorVencido))}</strong>
+            <small>${vencidas.toLocaleString('pt-BR')} fatura(s) com vencimento ultrapassado</small>
+          </div>
+        </div>
+
+        <div class="financial-composition">
+          <div class="financial-composition-heading">
+            <strong>Composição das cobranças em aberto</strong>
+            <span>${percentualVencido}% vencido</span>
+          </div>
+          <div class="financial-progress" role="img" aria-label="${percentualEmDia}% do valor em aberto não está vencido e ${percentualVencido}% está vencido">
+            <span class="financial-progress-current" style="width:${percentualEmDia}%"></span>
+            <span class="financial-progress-overdue" style="width:${percentualVencido}%"></span>
+          </div>
+          <div class="financial-legend">
+            <span><i class="financial-dot financial-dot-success"></i>Não vencido: ${escapeHTML(money(valorEmDia))}</span>
+            <span><i class="financial-dot financial-dot-danger"></i>Vencido: ${escapeHTML(money(valorVencido))}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-card activity-center" aria-labelledby="activity-center-title">
+        <div class="panel-heading">
+          <div><span class="section-eyebrow">ACOMPANHAMENTO OPERACIONAL</span><h2 id="activity-center-title">Atividade recente</h2><p>Últimos registros de clientes, pagamentos, faturas, ativações e solicitações.</p></div>
+          <span class="activity-count">${atividades.length} ${atividades.length === 1 ? "atividade" : "atividades"}</span>
+        </div>
+        ${atividades.length ? '<div class="activity-list">' + atividades.map(item => {
+          const labels = { cliente: "Novo cliente", pagamento: "Pagamento", fatura: "Fatura", ativacao: "Ativação", solicitacao: "Solicitação" };
+          const symbols = { cliente: "＋", pagamento: "R$", fatura: "▤", ativacao: "↗", solicitacao: "⋯" };
+          const description = [item.descricao, item.data ? date(item.data) : ""].filter(Boolean).join(" · ");
+          return '<article class="activity-row"><span class="activity-marker activity-marker-' + escapeHTML(item.tipo) + '" aria-hidden="true">' + (symbols[item.tipo] || "•") + '</span><div class="activity-main"><div class="activity-title-line"><strong>' + escapeHTML(item.titulo || labels[item.tipo] || "Atividade") + '</strong><span class="activity-type activity-type-' + escapeHTML(item.tipo) + '">' + (labels[item.tipo] || "Atividade") + '</span></div><p>' + escapeHTML(description) + '</p></div><div class="activity-side">' + (item.valor !== null && item.valor !== undefined ? '<strong>' + escapeHTML(money(item.valor)) + '</strong>' : "") + '<button type="button" class="btn btn-small" data-page="' + escapeHTML(item.pagina || "dashboard") + '">Abrir <span aria-hidden="true">→</span></button></div></article>';
+        }).join("") + '</div>' : '<div class="empty-state">Ainda não há atividades recentes para exibir.</div>'}
       </section>
 
       <section class="dashboard-grid">
@@ -489,7 +668,7 @@
               <p>Pagamentos registrados nos últimos 6 meses</p>
             </div>
             <div class="quick-actions">
-              <button type="button" class="btn btn-small" data-action="new-invoice">+ Nova fatura</button>
+              ${isAdmin ? '<button type="button" class="btn btn-small" data-action="new-invoice">+ Nova fatura</button>' : ''}
               <button type="button" class="btn btn-small" data-action="new-client">+ Novo cliente</button>
             </div>
           </div>
@@ -500,12 +679,14 @@
           <div class="panel-heading">
             <div>
               <h2>Operação</h2>
-              <p>Visão geral dos cadastros</p>
+              <p>Cadastros e serviços da operação</p>
             </div>
+            ${isAdmin ? '<button type="button" class="btn btn-small" data-page="services">Gerenciar serviços</button>' : ''}
           </div>
           <div class="mini-stats">
             <div><strong>${clientes.toLocaleString('pt-BR')}</strong><span>Clientes ativos</span></div>
-            <div><strong>${servicos.toLocaleString('pt-BR')}</strong><span>Serviços ativos</span></div>
+            <div><strong>${servicos.toLocaleString('pt-BR')}</strong><span>Serviços contratados ativos</span></div>
+            ${isAdmin ? `<div><strong>${servicosCatalogo.toLocaleString('pt-BR')}</strong><span>Itens ativos no catálogo</span></div>` : ''}
             ${isAdmin ? `<div><strong>${Number(data.usuarios ?? 0).toLocaleString('pt-BR')}</strong><span>Usuários ativos</span></div>` : ''}
           </div>
         </article>
@@ -661,7 +842,7 @@
       `<div class="quick-actions">
         <button type="button" class="btn btn-small" data-action="client-record" data-id="${id}">Ficha</button>
         <button type="button" class="btn btn-small" data-action="edit-client" data-id="${id}">Editar</button>
-        <button type="button" class="btn btn-small" data-action="toggle-client" data-id="${id}" data-status="${inactive ? 'active' : 'inactive'}">${inactive ? 'Ativar' : 'Inativar'}</button>
+        ${state.user?.role === 'admin' ? `<button type="button" class="btn btn-small" data-action="toggle-client" data-id="${id}" data-status="${inactive ? 'active' : 'inactive'}">${inactive ? 'Ativar' : 'Inativar'}</button>` : ''}
       </div>`
     ];
   }
@@ -858,7 +1039,7 @@
       <section class="content-card" style="margin-top:18px">
         <div class="panel-heading">
           <div><h2>Histórico de faturas</h2><p>Faturas vinculadas a este cliente.</p></div>
-          <button type="button" class="btn btn-primary" data-action="new-invoice-for-client" data-id="${escapeHTML(client.id)}">+ Nova fatura</button>
+          ${state.user?.role === 'admin' ? `<button type="button" class="btn btn-primary" data-action="new-invoice-for-client" data-id="${escapeHTML(client.id)}">+ Nova fatura</button>` : ''}
         </div>
         ${table(
           ['ID', 'Descrição', 'Valor', 'Vencimento', 'Status', 'Criada em', 'Ação'],
@@ -869,7 +1050,7 @@
             date(invoice.due_date),
             statusLabel(invoice.status),
             date(invoice.created_at),
-            invoice.status !== 'paid' && invoice.status !== 'cancelled' ? `
+            state.user?.role === 'admin' && invoice.status !== 'paid' && invoice.status !== 'cancelled' ? `
               <button type="button" class="btn btn-small" data-action="pay-invoice-from-record" data-id="${escapeHTML(invoice.id)}">Registrar pagamento</button>
             ` : '—'
           ])
@@ -1475,15 +1656,15 @@
   // --------------------------------------------------
 
   async function renderFinance() {
-    // Garante que o status "vencido" esteja atualizado antes de listar.
-    await api('/api/invoices/refresh-overdue', { method: 'POST' }).catch(() => {});
+    // Somente administradores podem executar a atualização operacional dos vencimentos.
+    if (state.user?.role === 'admin') {
+      await api('/api/invoices/refresh-overdue', { method: 'POST' }).catch(() => {});
+    }
 
-    const [clientsResult, invoicesResult] = await Promise.all([
-      api('/api/clients'),
-      api('/api/invoices')
-    ]);
+    const invoicesResult = await api('/api/invoices');
 
-    state.cache.clients = getArray(clientsResult, 'clients');
+    // Operadores não podem consultar a lista completa de clientes.
+    state.cache.clients = [];
     state.cache.invoices = getArray(invoicesResult, 'invoices');
 
     drawFinance();
@@ -1517,15 +1698,211 @@
       money(invoice.amount),
       date(invoice.due_date),
       statusLabel(invoice.status),
-      open ? `
+      state.user?.role === 'admin' && open ? `
         <div class="quick-actions">
+          <button type="button" class="btn btn-small"
+            data-action="view-invoice" data-id="${id}">Ver fatura</button>
           <button type="button" class="btn btn-small btn-primary"
+            data-action="checkout-pro" data-id="${id}">Checkout Pro</button>
+          <button type="button" class="btn btn-small"
             data-action="pay-invoice" data-id="${id}">Registrar pagamento</button>
           <button type="button" class="btn btn-small"
             data-action="cancel-invoice" data-id="${id}">Cancelar</button>
         </div>
-      ` : '—'
+      ` : `
+        <button type="button" class="btn btn-small"
+          data-action="view-invoice" data-id="${id}">Ver fatura</button>
+      `
     ];
+  }
+
+  function findInvoice(invoiceId) {
+    return state.cache.invoices.find(invoice => String(invoice.id) === String(invoiceId));
+  }
+
+  function viewInvoice(invoiceId) {
+    const invoice = findInvoice(invoiceId);
+    if (!invoice) {
+      notify('Fatura não encontrada na lista atual. Atualize a página e tente novamente.', true);
+      return;
+    }
+
+    const canGenerateCheckoutPro = state.user?.role === 'admin' &&
+      ['pending', 'overdue'].includes(invoice.status);
+
+    const modalElement = ensureModal();
+    modalElement.innerHTML = `
+      <div class="modal-backdrop" data-action="close-modal"></div>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <h2 id="modal-title">Fatura #${escapeHTML(invoice.id)}</h2>
+          <button type="button" class="btn btn-small" data-action="close-modal">Fechar</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-field"><span>Cliente</span><strong>${escapeHTML(invoice.client_name || `Cliente #${invoice.client_id}`)}</strong></div>
+          <div class="form-field"><span>Descrição</span><strong>${escapeHTML(invoice.description || '—')}</strong></div>
+          <div class="form-field"><span>Valor</span><strong>${money(invoice.amount)}</strong></div>
+          <div class="form-field"><span>Vencimento</span><strong>${date(invoice.due_date)}</strong></div>
+          <div class="form-field"><span>Status</span><strong>${statusLabel(invoice.status)}</strong></div>
+          ${canGenerateCheckoutPro ? `<p>Crie uma preferência do Checkout Pro para gerar um link seguro de pagamento no Mercado Pago.</p>` : ''}
+        </div>
+        <div class="modal-footer">
+          ${canGenerateCheckoutPro ? `<button type="button" class="btn btn-primary" data-action="checkout-pro" data-id="${escapeHTML(invoice.id)}">Criar link Checkout Pro</button>` : ''}
+          <button type="button" class="btn" data-action="close-modal">Fechar</button>
+        </div>
+      </section>
+    `;
+    modalElement.hidden = false;
+    modalElement.style.display = 'block';
+    modalElement.setAttribute('aria-hidden', 'false');
+  }
+
+  function showCheckoutProResult(result) {
+    const initPoint = typeof result.checkout_url === 'string' ? result.checkout_url : (typeof result.init_point === 'string' ? result.init_point : '');
+    let safeUrl = '';
+    try {
+      const parsed = new URL(initPoint);
+      if (parsed.protocol === 'https:' && /(^|\.)mercadopago\.com(\.br)?$/i.test(parsed.hostname)) {
+        safeUrl = parsed.href;
+      }
+    } catch (_) {}
+
+    const modalElement = ensureModal();
+    modalElement.innerHTML = `
+      <div class="modal-backdrop" data-action="close-modal"></div>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <h2 id="modal-title">Checkout Pro criado — Fatura #${escapeHTML(result.invoice_id)}</h2>
+          <button type="button" class="btn btn-small" data-action="close-modal">Fechar</button>
+        </div>
+        <div class="modal-body">
+          <p><strong>Valor:</strong> ${money(result.amount)}</p>
+          <p><strong>Preferência:</strong> ${escapeHTML(result.preference_id || '—')}</p>
+          <p>A preferência foi criada. O pagamento só será confirmado após a notificação validada do Mercado Pago.</p>
+          ${safeUrl
+            ? `<p><a class="btn btn-primary" href="${escapeHTML(safeUrl)}" target="_blank" rel="noopener noreferrer">Abrir Checkout Pro</a></p>
+               <label class="form-field"><span>Link para enviar ao cliente</span><input id="checkout-pro-link" type="url" readonly value="${escapeHTML(safeUrl)}"></label>
+               <button type="button" class="btn" data-action="copy-checkout-pro">Copiar link</button>`
+            : '<p>O Mercado Pago não retornou um link de checkout válido. Consulte os logs da aplicação.</p>'}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-action="close-modal">Fechar</button>
+        </div>
+      </section>
+    `;
+    modalElement.hidden = false;
+    modalElement.style.display = 'block';
+    modalElement.setAttribute('aria-hidden', 'false');
+  }
+
+  async function generateInvoiceCheckoutPro(invoiceId) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem criar links de Checkout Pro.', true);
+      return;
+    }
+
+    const invoice = findInvoice(invoiceId);
+    if (!invoice) {
+      notify('Fatura não encontrada na lista atual. Atualize a página e tente novamente.', true);
+      return;
+    }
+    if (!['pending', 'overdue'].includes(invoice.status)) {
+      notify('Somente faturas pendentes ou vencidas podem receber um link de Checkout Pro.', true);
+      return;
+    }
+
+    if (!confirm(`Criar um link de Checkout Pro de ${money(invoice.amount)} para a fatura #${invoice.id}?`)) {
+      return;
+    }
+
+    try {
+      const result = await api(`/api/invoices/${encodeURIComponent(invoice.id)}/mercadopago/checkout-pro`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      showCheckoutProResult(result);
+      notify('Preferência Checkout Pro criada.');
+    } catch (error) {
+      notify(error.message || 'Não foi possível criar o link Checkout Pro.', true);
+    }
+  }
+
+  function showPixResult(result) {
+    const pixCode = typeof result.pix_code === 'string' ? result.pix_code : '';
+    const pixUrl = typeof result.pix_url === 'string' ? result.pix_url : '';
+    const safeUrl = /^https:\/\//i.test(pixUrl) ? pixUrl : '';
+    const modalElement = ensureModal();
+
+    modalElement.innerHTML = `
+      <div class="modal-backdrop" data-action="close-modal"></div>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <h2 id="modal-title">PIX emitido pelo Mercado Pago — Fatura #${escapeHTML(result.invoice_id)}</h2>
+          <button type="button" class="btn btn-small" data-action="close-modal">Fechar</button>
+        </div>
+        <div class="modal-body">
+          <p><strong>Valor:</strong> ${money(result.amount)}</p>
+          <p><strong>Status:</strong> Pendente de pagamento</p>
+          ${pixCode ? `
+            <label class="form-field">
+              <span>PIX copia e cola</span>
+              <textarea id="pix-copy-code" rows="5" readonly>${escapeHTML(pixCode)}</textarea>
+            </label>
+            <button type="button" class="btn btn-primary" data-action="copy-pix">Copiar código PIX</button>
+          ` : '<p>O Mercado Pago não retornou o código copia e cola. Consulte o link da cobrança, se disponível.</p>'}
+          ${safeUrl ? `<p><a href="${escapeHTML(safeUrl)}" target="_blank" rel="noopener noreferrer">Abrir QR Code / cobrança PIX</a></p>` : ''}
+          <p>Guarde o código e confira o pagamento na área Financeiro. Nenhum pagamento foi marcado manualmente como recebido.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-action="close-modal">Fechar</button>
+        </div>
+      </section>
+    `;
+    modalElement.hidden = false;
+    modalElement.style.display = 'block';
+    modalElement.setAttribute('aria-hidden', 'false');
+  }
+
+  function generateInvoicePix(invoiceId) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem emitir PIX.', true);
+      return;
+    }
+
+    const invoice = findInvoice(invoiceId);
+    if (!invoice) {
+      notify('Fatura não encontrada na lista atual. Atualize a página e tente novamente.', true);
+      return;
+    }
+    if (!['pending', 'overdue'].includes(invoice.status)) {
+      notify('Somente faturas pendentes ou vencidas podem receber PIX.', true);
+      return;
+    }
+
+    openModal('Gerar PIX — Fatura #' + invoice.id, `
+      <p>Cliente: <strong>${escapeHTML(invoice.client_name || `Cliente #${invoice.client_id}`)}</strong></p>
+      <p>Descrição: <strong>${escapeHTML(invoice.description || 'Fatura VortexGrid')}</strong></p>
+      <p>Valor: <strong>${money(invoice.amount)}</strong></p>
+      <p>Ao confirmar, será criada uma cobrança PIX real pelo Mercado Pago.</p>
+      <label class="form-field"><span>CPF ou CNPJ do pagador (somente números)</span>
+        <input name="payer_cpf_cnpj" type="text" inputmode="numeric" autocomplete="off" pattern="(?:\\d{11}|\\d{14})" minlength="11" maxlength="14" placeholder="CPF com 11 ou CNPJ com 14 números" required>
+      </label>
+      <label class="form-field"><span>Prazo do PIX (dias, máximo 30)</span>
+        <input name="days_due_date" type="number" min="1" max="30" step="1" value="1" required>
+      </label>
+    `, async values => {
+      return await api(`/api/invoices/${encodeURIComponent(invoice.id)}/mercadopago/pix`, {
+        method: 'POST',
+        body: JSON.stringify({
+          payer_cpf_cnpj: values.payer_cpf_cnpj,
+          days_due_date: Number(values.days_due_date)
+        })
+      });
+    }, {
+      submitLabel: 'Confirmar e emitir PIX',
+      successMessage: 'PIX emitido pelo Mercado Pago.',
+      onSuccess: result => showPixResult(result)
+    });
   }
 
   function drawFinance() {
@@ -1547,8 +1924,11 @@
 
     content.innerHTML = `
       ${pageHeader('Financeiro',
-        'Acompanhe faturas, vencimentos e pagamentos.',
-        'Nova fatura', 'new-invoice')}
+        state.user?.role === 'admin'
+          ? 'Acompanhe faturas, vencimentos e pagamentos.'
+          : 'Consulte as faturas e cadastre novos clientes. As demais operações são restritas ao administrador.',
+        state.user?.role === 'admin' ? 'Nova fatura' : 'Novo cliente',
+        state.user?.role === 'admin' ? 'new-invoice' : 'new-client')}
 
       <section class="stats-grid">
         ${statCard('Em aberto', money(sum(open)), `${open.length} fatura(s)`, '▤')}
@@ -1932,7 +2312,12 @@
       button.textContent = 'Salvando...';
 
       try {
-        await onSubmit(values);
+        const result = await onSubmit(values);
+        if (typeof options.onSuccess === 'function') {
+          await options.onSuccess(result, values);
+          return;
+        }
+
         closeModal();
         notify(successMessage);
 
@@ -2521,8 +2906,71 @@
           payInvoice(element.dataset.id);
           break;
 
+        case 'view-invoice':
+          viewInvoice(element.dataset.id);
+          break;
+
+        case 'checkout-pro':
+          generateInvoiceCheckoutPro(element.dataset.id);
+          break;
+
+        case 'copy-checkout-pro': {
+          const linkField = $('#checkout-pro-link');
+          const link = linkField?.value || '';
+          if (!link) {
+            notify('O link do Checkout Pro não está disponível para copiar.', true);
+            break;
+          }
+          if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(link)
+              .then(() => notify('Link do Checkout Pro copiado.'))
+              .catch(() => {
+                linkField.focus();
+                linkField.select();
+                notify('Selecione o link e copie manualmente.', true);
+              });
+          } else {
+            linkField.focus();
+            linkField.select();
+            const copied = document.execCommand('copy');
+            notify(copied ? 'Link do Checkout Pro copiado.' : 'Selecione o link e copie manualmente.', !copied);
+          }
+          break;
+        }
+
+
+        case 'copy-pix': {
+          const codeField = $('#pix-copy-code');
+          const code = codeField?.value || '';
+          if (!code) {
+            notify('O código PIX não está disponível para copiar.', true);
+            break;
+          }
+          if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(code)
+              .then(() => notify('Código PIX copiado.'))
+              .catch(() => {
+                codeField.focus();
+                codeField.select();
+                notify('Selecione o código PIX e copie manualmente.', true);
+              });
+          } else {
+            codeField.focus();
+            codeField.select();
+            const copied = document.execCommand('copy');
+            notify(copied ? 'Código PIX copiado.' : 'Selecione o código PIX e copie manualmente.', !copied);
+          }
+          break;
+        }
+
         case 'close-modal':
           closeModal();
+          break;
+
+        case 'refresh-dashboard':
+          if (state.page === 'dashboard') {
+            navigate('dashboard');
+          }
           break;
 
         case 'reload':
@@ -2541,6 +2989,64 @@
       notify(error.message || 'Não foi possível executar esta ação.', true);
     }
   });
+
+
+
+  // --------------------------------------------------
+  // DASHBOARD LAYOUT — COMPOSIÇÃO SAAS PREMIUM
+  // Reorganiza os blocos já renderizados sem duplicar dados
+  // nem alterar endpoints ou ações existentes.
+  // --------------------------------------------------
+  function arrangePremiumDashboard() {
+    const root = document.querySelector('#page-content');
+    if (!root || !root.querySelector('.stats-grid')) return;
+    if (root.querySelector('.vg-dashboard-layout')) return;
+
+    const header = root.querySelector(':scope > .page-header');
+    const alerts = root.querySelector(':scope > .alert-center');
+    const stats = root.querySelector(':scope > .stats-grid');
+    const finance = root.querySelector(':scope > .financial-overview');
+    const activity = root.querySelector(':scope > .activity-center');
+    const primary = root.querySelector(':scope > .dashboard-grid:not(.dashboard-grid-secondary)');
+    const secondary = root.querySelector(':scope > .dashboard-grid-secondary');
+    if (!header || !stats || !primary) return;
+
+    const layout = document.createElement('div');
+    layout.className = 'vg-dashboard-layout';
+    const intro = document.createElement('div');
+    intro.className = 'vg-dashboard-intro';
+    const main = document.createElement('div');
+    main.className = 'vg-dashboard-main';
+    const bottom = document.createElement('div');
+    bottom.className = 'vg-dashboard-bottom';
+
+    root.insertBefore(layout, header);
+    layout.appendChild(intro);
+    intro.appendChild(header);
+    intro.appendChild(stats);
+    if (alerts) layout.appendChild(alerts);
+    main.appendChild(primary);
+    layout.appendChild(main);
+    if (finance) layout.appendChild(finance);
+    if (activity) bottom.appendChild(activity);
+    if (secondary) {
+      Array.from(secondary.children).forEach(function (card) {
+        bottom.appendChild(card);
+      });
+      secondary.remove();
+    }
+    if (bottom.children.length) layout.appendChild(bottom);
+    root.classList.add('vg-dashboard-ready');
+  }
+
+  const dashboardLayoutObserver = new MutationObserver(function () {
+    arrangePremiumDashboard();
+  });
+  const dashboardLayoutRoot = document.querySelector('#page-content');
+  if (dashboardLayoutRoot) {
+    dashboardLayoutObserver.observe(dashboardLayoutRoot, { childList: true });
+    arrangePremiumDashboard();
+  }
 
   // --------------------------------------------------
   // INICIALIZAÇÃO
@@ -2567,6 +3073,62 @@
       showLogin();
     }
   }
+
+
+  const globalSearchInput=$('#global-search-input'),globalSearchResults=$('#global-search-results'),globalSearchWrap=$('#global-search-wrap'),shortcutsButton=$('#shortcuts-button'),shortcutsMenu=$('#shortcuts-menu'),alertsButton=$('#header-alerts-button'),collapseButton=$('#sidebar-collapse-toggle');
+  let globalSearchTimer=null,globalSearchRequest=0;
+  function updateHeaderAlerts(d){const b=$('#header-alerts-badge');if(!b||state.user?.role!=='admin')return;const n=Number(d?.faturasVencidas||0)+Number(d?.ativacoesPendentes||0)+Number(d?.solicitacoesPendentes||0);b.textContent=n>99?'99+':String(n);b.hidden=n<=0;}
+  function closeGlobalSearch(){if(globalSearchResults)globalSearchResults.hidden=true;globalSearchInput?.setAttribute('aria-expanded','false');}
+  function closeShortcuts(){if(shortcutsMenu)shortcutsMenu.hidden=true;shortcutsButton?.setAttribute('aria-expanded','false');}
+  function searchText(v){return v.filter(x=>x!==null&&x!==undefined).join(' ').toLocaleLowerCase('pt-BR');}
+  async function globalData(){if(state.globalSearchCache)return state.globalSearchCache;const admin=state.user?.role==='admin';const [clients,services,invoices]=await Promise.all([admin?api('/api/clients').then(r=>getArray(r,'clients')).catch(()=>[]):Promise.resolve([]),admin?api('/api/services').then(r=>getArray(r,'services')).catch(()=>[]):Promise.resolve([]),api('/api/invoices').then(r=>getArray(r,'invoices')).catch(()=>[])]);return state.globalSearchCache={clients,services,invoices};}
+  function resultButton(o){const k=o.type==='client'?'Cliente':o.type==='service'?'Serviço':'Fatura',sym=o.type==='client'?'♙':o.type==='service'?'▦':'R$';const page=o.action?'':o.page;return `<button type="button" class="global-search-result" role="option" data-page="${escapeHTML(page||'')}" data-action="${escapeHTML(o.action||'')}" data-id="${escapeHTML(o.id??'')}"><span class="global-search-result-icon global-search-result-${o.type}">${sym}</span><span class="global-search-result-copy"><strong>${escapeHTML(o.title||'Registro')}</strong><small>${escapeHTML(o.description||'')}</small></span><span class="global-search-result-kind">${k}</span></button>`;}
+  async function runGlobalSearch(term,id){globalSearchResults.hidden=false;globalSearchResults.innerHTML='<div class="global-search-message">Buscando registros...</div>';try{const d=await globalData();if(id!==globalSearchRequest)return;const q=term.toLocaleLowerCase('pt-BR'),out=[];d.clients.filter(x=>searchText([x.name,x.email,x.phone,x.document,x.id]).includes(q)).slice(0,5).forEach(x=>out.push(resultButton({type:'client',id:x.id,action:'client-record',title:x.name||x.email||'Cliente #'+x.id,description:[x.email,x.phone].filter(Boolean).join(' · ')})));d.services.filter(x=>searchText([x.name,x.title,x.description,x.category_name,x.id,x.status]).includes(q)).slice(0,4).forEach(x=>out.push(resultButton({type:'service',id:x.id,page:'services',title:x.name||x.title||'Serviço #'+x.id,description:[x.category_name,x.status,x.description].filter(Boolean).join(' · ')})));d.invoices.filter(x=>searchText([x.client_name,x.description,x.id,x.status]).includes(q)).slice(0,4).forEach(x=>out.push(resultButton({type:'invoice',id:x.id,page:'finance',title:x.client_name||'Fatura #'+x.id,description:[x.description,x.status,x.amount!==undefined?money(x.amount):''].filter(Boolean).join(' · ')})));globalSearchResults.innerHTML=out.length?'<div class="global-search-heading">RESULTADOS ENCONTRADOS</div>'+out.join(''):'<div class="global-search-message">Nenhum resultado para “'+escapeHTML(term)+'”.</div>';}catch{if(id===globalSearchRequest)globalSearchResults.innerHTML='<div class="global-search-message">Não foi possível concluir a busca agora.</div>';}}
+  if(globalSearchInput&&globalSearchResults){globalSearchInput.addEventListener('input',()=>{clearTimeout(globalSearchTimer);const q=globalSearchInput.value.trim(),id=++globalSearchRequest;globalSearchInput.setAttribute('aria-expanded','true');if(q.length<2){globalSearchResults.innerHTML='<div class="global-search-message">Digite pelo menos 2 caracteres.</div>';globalSearchResults.hidden=false;return;}globalSearchTimer=setTimeout(()=>runGlobalSearch(q,id),220);});globalSearchInput.addEventListener('focus',()=>{if(globalSearchInput.value.trim().length<2){globalSearchResults.innerHTML='<div class="global-search-message">Busque clientes, serviços e faturas.</div>';globalSearchResults.hidden=false;}});}
+  if(globalSearchInput&&globalSearchResults){
+    globalSearchInput.addEventListener('keydown',event=>{
+      const results=[...globalSearchResults.querySelectorAll('.global-search-result')];
+      if(event.key==='Enter' && !globalSearchResults.hidden && results.length){
+        event.preventDefault();
+        results[0].click();
+        return;
+      }
+      if(event.key==='Escape'){
+        closeGlobalSearch();
+        return;
+      }
+      if(!['ArrowDown','ArrowUp'].includes(event.key) || !results.length) return;
+      event.preventDefault();
+      if(event.key==='ArrowDown') results[0].focus();
+      else results[results.length-1].focus();
+    });
+    globalSearchResults.addEventListener('focusin',event=>{
+      const focused=event.target.closest('.global-search-result');
+      globalSearchResults.querySelectorAll('.global-search-result').forEach(item=>{
+        item.setAttribute('aria-selected',String(item===focused));
+      });
+    });
+    globalSearchResults.addEventListener('keydown',event=>{
+      const item=event.target.closest('.global-search-result');
+      if(!item) return;
+      const results=[...globalSearchResults.querySelectorAll('.global-search-result')];
+      const index=results.indexOf(item);
+      if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+        event.preventDefault();
+        const next=(index+(event.key==='ArrowDown'?1:-1)+results.length)%results.length;
+        results[next].focus();
+      } else if(event.key==='Escape'){
+        closeGlobalSearch();
+        globalSearchInput.focus();
+      }
+    });
+  }
+  document.addEventListener('click',e=>{const t=e.target;if(!(t instanceof Element))return;if(globalSearchWrap&&!globalSearchWrap.contains(t))closeGlobalSearch();if(shortcutsMenu&&!shortcutsMenu.contains(t)&&!shortcutsButton?.contains(t))closeShortcuts();});
+  shortcutsButton?.addEventListener('click',()=>{const open=shortcutsMenu?.hidden??true;closeGlobalSearch();if(shortcutsMenu)shortcutsMenu.hidden=!open;shortcutsButton.setAttribute('aria-expanded',String(open));});
+  alertsButton?.addEventListener('click',async()=>{closeGlobalSearch();closeShortcuts();if(state.user?.role!=='admin'){navigate('finance');return;}await navigate('dashboard');requestAnimationFrame(()=>{const p=$('#alert-center-title')?.closest('.alert-center');if(p){p.scrollIntoView({behavior:'smooth',block:'center'});p.classList.add('alert-center-highlight');setTimeout(()=>p.classList.remove('alert-center-highlight'),1800);}});});
+  collapseButton?.addEventListener('click',()=>{const on=document.body.classList.toggle('sidebar-collapsed');collapseButton.setAttribute('aria-pressed',String(on));collapseButton.setAttribute('aria-label',on?'Expandir menu':'Recolher menu');collapseButton.title=on?'Expandir menu':'Recolher menu';const l=collapseButton.querySelector('.collapse-toggle-label');if(l)l.textContent=on?'Expandir menu':'Recolher menu';const i=collapseButton.querySelector('span[aria-hidden="true"]');if(i)i.textContent=on?'›':'‹';try{localStorage.setItem('vortexgrid-sidebar-collapsed',on?'1':'0');}catch{}});
+  try{if(localStorage.getItem('vortexgrid-sidebar-collapsed')==='1'){document.body.classList.add('sidebar-collapsed');collapseButton?.setAttribute('aria-pressed','true');collapseButton?.setAttribute('aria-label','Expandir menu');if(collapseButton)collapseButton.title='Expandir menu';const l=collapseButton?.querySelector('.collapse-toggle-label');if(l)l.textContent='Expandir menu';const i=collapseButton?.querySelector('span[aria-hidden="true"]');if(i)i.textContent='›';}}catch{}
+  document.addEventListener('keydown',e=>{const k=e.key.toLowerCase();if((e.ctrlKey||e.metaKey)&&k==='k'){e.preventDefault();globalSearchInput?.focus();globalSearchInput?.select();}else if(k==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();globalSearchInput?.focus();}else if(e.key==='Escape'){closeGlobalSearch();closeShortcuts();}});
 
   init();
 })();
