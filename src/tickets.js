@@ -1,5 +1,8 @@
 'use strict';
 
+const multer = require('multer');
+const path = require('path');
+
 module.exports = function registerTickets(app, { db, autenticado, validarId, erro }) {
   let schemaPromise;
   async function ensureSchema() {
@@ -33,6 +36,19 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
         } catch (error) {
           throw error;
         }
+        await db.query(`CREATE TABLE IF NOT EXISTS support_ticket_attachments (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          ticket_id BIGINT UNSIGNED NOT NULL,
+          uploaded_by_type ENUM('client','staff') NOT NULL,
+          uploaded_by_id BIGINT UNSIGNED NULL,
+          original_name VARCHAR(180) NOT NULL,
+          mime_type VARCHAR(100) NOT NULL,
+          size_bytes INT UNSIGNED NOT NULL,
+          file_data LONGBLOB NOT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          KEY idx_support_ticket_attachments_ticket (ticket_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
         await db.query(`CREATE TABLE IF NOT EXISTS support_ticket_messages (
           id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
           ticket_id BIGINT UNSIGNED NOT NULL,
@@ -51,6 +67,22 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
   const statuses = ['open','in_progress','waiting_customer','resolved','closed'];
   const priorities = ['low','normal','high','urgent'];
   const validText = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max;
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
+  const uploadTicketFile = (req, res, next) => upload.single('file')(req, res, error => {
+    if (!error) return next();
+    if (error.code === 'LIMIT_FILE_SIZE') return erro(res, 413, 'O anexo deve ter no máximo 5 MB.');
+    return erro(res, 400, 'Não foi possível receber o anexo. Envie um PDF, PNG, JPG ou TXT de até 5 MB.');
+  });
+  function validateTicketFile(file) {
+    if (!file || !Buffer.isBuffer(file.buffer)) return false;
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const b = file.buffer;
+    if (ext === '.pdf' && file.mimetype === 'application/pdf') return b.length >= 5 && b.subarray(0,5).toString() === '%PDF-';
+    if (ext === '.png' && file.mimetype === 'image/png') return b.length >= 8 && b.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+    if ((ext === '.jpg' || ext === '.jpeg') && file.mimetype === 'image/jpeg') return b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+    if (ext === '.txt' && file.mimetype === 'text/plain') return !b.includes(0);
+    return false;
+  }
 
   app.get('/api/tickets', autenticado, async (req, res) => {
     try {
@@ -111,10 +143,53 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
       `, [id]);
       if (!rows.length) return erro(res, 404, 'Ticket não encontrado.');
       const [messages] = await db.query('SELECT id,sender_type,sender_id,sender_name,message,created_at FROM support_ticket_messages WHERE ticket_id=? ORDER BY created_at ASC,id ASC', [id]);
-      return res.json({ ticket: rows[0], messages });
+      const [attachments] = await db.query('SELECT id,original_name,mime_type,size_bytes,uploaded_by_type,created_at FROM support_ticket_attachments WHERE ticket_id=? ORDER BY created_at ASC,id ASC', [id]);
+      return res.json({ ticket: rows[0], messages, attachments });
     } catch (error) {
       console.error('Erro ao abrir ticket:', error.code || error.message);
       return erro(res, 500, 'Não foi possível abrir o ticket.');
+    }
+  });
+
+  app.post('/api/tickets/:id/attachments', autenticado, uploadTicketFile, async (req, res) => {
+    try {
+      await ensureSchema();
+      const id = validarId(req.params.id);
+      if (!id || !validateTicketFile(req.file)) return erro(res, 400, 'Anexo inválido. Formatos aceitos: PDF, PNG, JPG e TXT.');
+      const [tickets] = await db.query('SELECT id,status FROM support_tickets WHERE id=? LIMIT 1', [id]);
+      if (!tickets.length) return erro(res, 404, 'Ticket não encontrado.');
+      if (tickets[0].status === 'closed') return erro(res, 409, 'Não é possível anexar arquivos a um ticket encerrado.');
+      const file = req.file;
+      const originalName = path.basename(file.originalname).replace(/[\\r\\n\\x00-\\x1f]/g, '').slice(0,180) || 'anexo';
+      const [result] = await db.query(
+        'INSERT INTO support_ticket_attachments(ticket_id,uploaded_by_type,uploaded_by_id,original_name,mime_type,size_bytes,file_data) VALUES(?,?,?,?,?,?,?)',
+        [id,'staff',req.session.user.id,originalName,file.mimetype,file.size,file.buffer]
+      );
+      await db.query('UPDATE support_tickets SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?', [id]);
+      return res.status(201).json({ id: result.insertId, mensagem: 'Anexo enviado.' });
+    } catch (error) {
+      console.error('Erro ao anexar arquivo ao ticket:', error.code || error.message);
+      return erro(res, 500, 'Não foi possível salvar o anexo.');
+    }
+  });
+
+  app.get('/api/tickets/:id/attachments/:attachmentId', autenticado, async (req, res) => {
+    try {
+      await ensureSchema();
+      const id = validarId(req.params.id);
+      const attachmentId = validarId(req.params.attachmentId);
+      if (!id || !attachmentId) return erro(res, 400, 'Identificador de anexo inválido.');
+      const [rows] = await db.query('SELECT original_name,mime_type,file_data FROM support_ticket_attachments WHERE id=? AND ticket_id=? LIMIT 1', [attachmentId,id]);
+      if (!rows.length) return erro(res, 404, 'Anexo não encontrado.');
+      const name = rows[0].original_name.replace(/[\\r\\n\\x00-\\x1f]/g, '').slice(0,180) || 'anexo';
+      res.setHeader('Content-Type', rows[0].mime_type);
+      res.setHeader('Content-Disposition', 'attachment; filename="attachment"; filename*=UTF-8\'\'' + encodeURIComponent(name));
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'private, no-store');
+      return res.send(rows[0].file_data);
+    } catch (error) {
+      console.error('Erro ao baixar anexo do ticket:', error.code || error.message);
+      return erro(res, 500, 'Não foi possível baixar o anexo.');
     }
   });
 
