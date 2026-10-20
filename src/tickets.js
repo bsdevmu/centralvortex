@@ -160,7 +160,7 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
       if (!tickets.length) return erro(res, 404, 'Ticket não encontrado.');
       if (tickets[0].status === 'closed') return erro(res, 409, 'Não é possível anexar arquivos a um ticket encerrado.');
       const file = req.file;
-      const originalName = path.basename(file.originalname).replace(/[\\r\\n\\x00-\\x1f]/g, '').slice(0,180) || 'anexo';
+      const originalName = path.basename(file.originalname).replace(/[\r\n\x00-\x1f\x7f]/g, '').slice(0,180) || 'anexo';
       const [result] = await db.query(
         'INSERT INTO support_ticket_attachments(ticket_id,uploaded_by_type,uploaded_by_id,original_name,mime_type,size_bytes,file_data) VALUES(?,?,?,?,?,?,?)',
         [id,'staff',req.session.user.id,originalName,file.mimetype,file.size,file.buffer]
@@ -181,7 +181,7 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
       if (!id || !attachmentId) return erro(res, 400, 'Identificador de anexo inválido.');
       const [rows] = await db.query('SELECT original_name,mime_type,file_data FROM support_ticket_attachments WHERE id=? AND ticket_id=? LIMIT 1', [attachmentId,id]);
       if (!rows.length) return erro(res, 404, 'Anexo não encontrado.');
-      const name = rows[0].original_name.replace(/[\\r\\n\\x00-\\x1f]/g, '').slice(0,180) || 'anexo';
+      const name = rows[0].original_name.replace(/[\r\n\x00-\x1f\x7f]/g, '').slice(0,180) || 'anexo';
       res.setHeader('Content-Type', rows[0].mime_type);
       res.setHeader('Content-Disposition', 'attachment; filename="attachment"; filename*=UTF-8\'\'' + encodeURIComponent(name));
       res.setHeader('X-Content-Type-Options', 'nosniff');
