@@ -8,6 +8,7 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
         await db.query(`CREATE TABLE IF NOT EXISTS support_tickets (
           id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
           client_id BIGINT UNSIGNED NOT NULL,
+          contracted_service_id BIGINT UNSIGNED NULL,
           subject VARCHAR(180) NOT NULL,
           category VARCHAR(60) NOT NULL DEFAULT 'general',
           priority ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
@@ -20,6 +21,18 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
           KEY idx_support_tickets_client (client_id, updated_at),
           KEY idx_support_tickets_status (status, updated_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+        try {
+          const [columns] = await db.query("SHOW COLUMNS FROM support_tickets LIKE 'contracted_service_id'");
+          if (!columns.length) {
+            try {
+              await db.query('ALTER TABLE support_tickets ADD COLUMN contracted_service_id BIGINT UNSIGNED NULL AFTER client_id');
+            } catch (error) {
+              if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+            }
+          }
+        } catch (error) {
+          throw error;
+        }
         await db.query(`CREATE TABLE IF NOT EXISTS support_ticket_messages (
           id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
           ticket_id BIGINT UNSIGNED NOT NULL,
@@ -47,12 +60,13 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
       const where = status ? 'WHERE t.status = ?' : '';
       if (status) params.push(status);
       const [rows] = await db.query(`
-        SELECT t.id,t.client_id,t.subject,t.category,t.priority,t.status,t.assigned_to,
+        SELECT t.id,t.client_id,t.contracted_service_id,t.subject,t.category,t.priority,t.status,t.assigned_to,
           t.created_at,t.updated_at,t.last_message_at,c.name AS client_name,c.email AS client_email,
-          u.name AS assignee_name,
+          cs.name AS service_name,u.name AS assignee_name,
           (SELECT COUNT(*) FROM support_ticket_messages m WHERE m.ticket_id=t.id) AS message_count
         FROM support_tickets t
         LEFT JOIN clients c ON c.id=t.client_id
+        LEFT JOIN contracted_services cs ON cs.id=t.contracted_service_id
         LEFT JOIN users u ON u.id=t.assigned_to
         ${where}
         ORDER BY FIELD(t.status,'open','in_progress','waiting_customer','resolved','closed'),t.last_message_at DESC
@@ -71,9 +85,10 @@ module.exports = function registerTickets(app, { db, autenticado, validarId, err
       const id = validarId(req.params.id);
       if (!id) return erro(res, 400, 'Ticket inválido.');
       const [rows] = await db.query(`
-        SELECT t.*,c.name AS client_name,c.email AS client_email,c.phone AS client_phone,u.name AS assignee_name
+        SELECT t.*,c.name AS client_name,c.email AS client_email,c.phone AS client_phone,cs.name AS service_name,u.name AS assignee_name
         FROM support_tickets t
         LEFT JOIN clients c ON c.id=t.client_id
+        LEFT JOIN contracted_services cs ON cs.id=t.contracted_service_id
         LEFT JOIN users u ON u.id=t.assigned_to
         WHERE t.id=? LIMIT 1
       `, [id]);
