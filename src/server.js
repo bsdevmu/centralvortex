@@ -14,8 +14,8 @@ const PORT = Number(process.env.PORT || 3000);
 const db = database;
 
 function categoriaExigeOrcamento(nome, nomePai = '') {
-  const normalizar = valor => String(valor || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLocaleLowerCase('pt-BR');
-  return [normalizar(nome), normalizar(nomePai)].some(valor => /\\bempresas\\b|\\bsistemas\\b|gestao comercial|\\bsmartpos\\b/.test(valor));
+  const normalizar = valor => String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
+  return [normalizar(nome), normalizar(nomePai)].some(valor => /\bempresas\b|\bsistemas\b|gestao comercial|\bsmartpos\b/.test(valor));
 }
 
 app.set('trust proxy', 1);
