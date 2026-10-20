@@ -955,14 +955,61 @@
     }
 
     return `
-      <button type="button" class="btn btn-small btn-primary"
-        data-action="change-contracted-service-status"
-        data-id="${escapeHTML(service.id)}"
-        data-status="${escapeHTML(status)}"
-        data-name="${escapeHTML(service.name || 'Serviço')}">
-        Alterar status
-      </button>
+      <div class="quick-actions" style="gap:6px;flex-wrap:wrap">
+        <button type="button" class="btn btn-small"
+          data-action="edit-contracted-service-details"
+          data-id="${escapeHTML(service.id)}"
+          data-name="${escapeHTML(service.name || 'Serviço')}">Informações</button>
+        <button type="button" class="btn btn-small btn-primary"
+          data-action="change-contracted-service-status"
+          data-id="${escapeHTML(service.id)}"
+          data-status="${escapeHTML(status)}"
+          data-name="${escapeHTML(service.name || 'Serviço')}">Alterar status</button>
+      </div>
     `;
+  }
+
+  async function openContractedServiceDetails(serviceId, serviceName) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem editar estas informações.', true);
+      return;
+    }
+    try {
+      const result = await api(`/api/contracted-services/${encodeURIComponent(serviceId)}/details`);
+      const details = Array.isArray(result.details) ? result.details : [];
+      const textValue = details.map(item => `${item.label} | ${item.value}`).join('\\n');
+      openModal(
+        `Informações do serviço — ${serviceName || 'Serviço'}`,
+        `
+          <div class="form-field">
+            <label for="contracted-service-details-text">Informações visíveis ao cliente</label>
+            <textarea id="contracted-service-details-text" name="details_text" rows="12" maxlength="20000" placeholder="IP do servidor | 192.0.2.10&#10;Painel | https://exemplo.com&#10;Usuário | cliente123&#10;Instruções | Acesse o painel para gerenciar seu serviço">${escapeHTML(textValue)}</textarea>
+            <small>Uma informação por linha, no formato <strong>Título | Valor</strong>. Até 30 linhas. Não inclua fornecedor, custos internos ou outras informações confidenciais.</small>
+          </div>
+        `,
+        async values => {
+          const details = String(values.details_text || '')
+            .split(/\\r?\\n/)
+            .map(line => {
+              const separator = line.indexOf('|');
+              if (separator < 0) return { label: line.trim(), value: '' };
+              return { label: line.slice(0, separator).trim(), value: line.slice(separator + 1).trim() };
+            })
+            .filter(item => item.label || item.value);
+          if (details.length > 30) throw new Error('Use no máximo 30 informações.');
+          if (details.some(item => !item.label || item.label.length > 80 || item.value.length > 4000)) {
+            throw new Error('Confira as linhas. Use Título | Valor; título até 80 caracteres e valor até 4000.');
+          }
+          return api(`/api/contracted-services/${encodeURIComponent(serviceId)}/details`, {
+            method: 'PUT',
+            body: JSON.stringify({ details })
+          });
+        },
+        { successMessage: 'Informações do serviço salvas.' }
+      );
+    } catch (error) {
+      notify(error.message || 'Não foi possível carregar as informações do serviço.', true);
+    }
   }
 
   function renderClientRecord(record) {
@@ -3001,6 +3048,10 @@
 
         case 'add-contracted-service':
           addContractedService(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+
+        case 'edit-contracted-service-details':
+          openContractedServiceDetails(element.dataset.id, element.dataset.name);
           break;
 
         case 'change-contracted-service-status':
