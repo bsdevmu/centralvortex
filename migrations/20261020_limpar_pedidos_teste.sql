@@ -1,69 +1,41 @@
--- VortexGrid Central — limpeza dos pedidos e serviços de teste
--- Execute somente após backup do banco.
--- Preserva: users, clients, services (catálogo), configurações e demais dados sem vínculo com pedidos.
--- Remove: todos os service_orders e contracted_services de teste, detalhes/histórico desses serviços,
--- e faturas/pagamentos/transações do Mercado Pago vinculados aos pedidos removidos.
--- A limpeza não cancela nem estorna pagamentos na conta do Mercado Pago; atua apenas no banco local.
+-- VortexGrid Central — zerar dados comerciais de teste antes do início das vendas
+-- PRESERVA: users (contas administrativas/login), clients (contas de clientes),
+-- services (catálogo da loja) e configurações.
+-- REMOVE: TODOS os pedidos, TODOS os serviços contratados (inclusive ativos/confirmados),
+-- detalhes/históricos operacionais, faturas e registros locais de pagamento/checkout.
+-- Não cancela nem estorna pagamentos na conta externa do Mercado Pago.
 --
--- Antes de executar, confirme que este ambiente ainda não tem vendas reais.
--- O script é transacional; se houver erro antes do COMMIT, execute ROLLBACK na mesma sessão.
+-- ATENÇÃO: faça backup antes de executar. Use somente se confirmar que não existem
+-- vendas reais neste banco. Confira o esquema das tabelas no ambiente antes da execução.
+-- Este script não deve ser executado parcialmente. Em caso de erro, não confirme a transação.
 
 START TRANSACTION;
 
--- Guardar os IDs antes de apagar os pedidos.
-CREATE TEMPORARY TABLE tmp_vg_test_order_invoice_ids (
-  invoice_id BIGINT UNSIGNED NOT NULL PRIMARY KEY
-) ENGINE=InnoDB;
+-- Dados auxiliares de serviços contratados.
+DELETE FROM contracted_service_details;
+DELETE FROM contracted_service_status_history;
 
-INSERT IGNORE INTO tmp_vg_test_order_invoice_ids (invoice_id)
-SELECT DISTINCT invoice_id
-FROM service_orders
-WHERE invoice_id IS NOT NULL;
+-- Como a loja ainda não iniciou vendas reais, limpar todo o financeiro local de teste.
+DELETE FROM payments;
+DELETE FROM mercadopago_transactions;
+DELETE FROM mercadopago_checkout_preferences;
+DELETE FROM invoices;
 
-CREATE TEMPORARY TABLE tmp_vg_test_contracted_service_ids (
-  contracted_service_id BIGINT UNSIGNED NOT NULL PRIMARY KEY
-) ENGINE=InnoDB;
-
-INSERT IGNORE INTO tmp_vg_test_contracted_service_ids (contracted_service_id)
-SELECT id FROM contracted_services;
-
--- Apagar dados auxiliares ligados aos serviços contratados.
-DELETE d
-FROM contracted_service_details d
-INNER JOIN tmp_vg_test_contracted_service_ids t
-  ON t.contracted_service_id = d.contracted_service_id;
-
-DELETE h
-FROM contracted_service_status_history h
-INNER JOIN tmp_vg_test_contracted_service_ids t
-  ON t.contracted_service_id = h.contracted_service_id;
-
--- Apagar registros financeiros locais apenas das faturas associadas a pedidos.
-DELETE p
-FROM payments p
-INNER JOIN tmp_vg_test_order_invoice_ids t ON t.invoice_id = p.invoice_id;
-
-DELETE mt
-FROM mercadopago_transactions mt
-INNER JOIN tmp_vg_test_order_invoice_ids t ON t.invoice_id = mt.invoice_id;
-
-DELETE mp
-FROM mercadopago_checkout_preferences mp
-INNER JOIN tmp_vg_test_order_invoice_ids t ON t.invoice_id = mp.invoice_id;
-
-DELETE i
-FROM invoices i
-INNER JOIN tmp_vg_test_order_invoice_ids t ON t.invoice_id = i.id;
-
--- Zerar todos os pedidos e serviços contratados de teste.
+-- Zerar todos os pedidos e serviços contratados, sem filtrar por status.
+-- Isso inclui pedidos confirmados/pagos e serviços ativos.
 DELETE FROM service_orders;
 DELETE FROM contracted_services;
 
-DROP TEMPORARY TABLE tmp_vg_test_order_invoice_ids;
-DROP TEMPORARY TABLE tmp_vg_test_contracted_service_ids;
-
--- Confira as contagens antes de confirmar. Se estiver correto, execute COMMIT.
--- Se algo inesperado aparecer, execute ROLLBACK em vez de COMMIT.
+-- Verificação antes de confirmar: os resultados devem ser todos zero.
 SELECT
   (SELECT COUNT(*) FROM service_orders) AS pedidos_restantes,
-  (SELECT COUNT(*) FROM contracted_services) AS servicos_contratados_restantes;
+  (SELECT COUNT(*) FROM contracted_services) AS servicos_contratados_restantes,
+  (SELECT COUNT(*) FROM invoices) AS faturas_restantes,
+  (SELECT COUNT(*) FROM payments) AS pagamentos_restantes,
+  (SELECT COUNT(*) FROM mercadopago_transactions) AS transacoes_mp_restantes,
+  (SELECT COUNT(*) FROM mercadopago_checkout_preferences) AS preferencias_checkout_restantes;
+
+-- Execute COMMIT somente depois de verificar que todas as contagens estão zeradas.
+-- Se houver qualquer erro ou resultado inesperado, execute ROLLBACK na mesma sessão.
+-- COMMIT;
+-- ROLLBACK;
