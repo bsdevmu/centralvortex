@@ -8,6 +8,7 @@
     user: null,
     page: 'dashboard',
     currentTicketId: null,
+    ticketLastMessageId: null,
     ticketFilters: { status: 'all', priority: 'all', assigned_to: 'all' },
     clientSearch: '',
     clientStatus: 'all',
@@ -2457,6 +2458,7 @@
     const messages = Array.isArray(result.messages) ? result.messages : [];
     const attachments = Array.isArray(result.attachments) ? result.attachments : [];
     state.currentTicketId = ticket.id;
+    state.ticketLastMessageId = messages.length ? messages[messages.length - 1].id : null;
     content.innerHTML = `
       <div class="page-heading"><div><h2>Ticket #${escapeHTML(ticket.id)} — ${escapeHTML(ticket.subject)}</h2><p>${escapeHTML(ticket.client_name || 'Cliente')} · ${escapeHTML(ticket.client_email || '')}</p></div>
         <button type="button" class="btn" data-action="tickets-back">← Voltar aos tickets</button></div>
@@ -2525,6 +2527,30 @@
     await api('/api/tickets/' + encodeURIComponent(id), { method:'PATCH', body:JSON.stringify({status,priority,assigned_to}) });
     notify('Ticket atualizado.');
     await openTicket(id);
+  }
+
+  async function atualizarConversaTicketSilenciosa() {
+    const id = state.currentTicketId;
+    if (!id || state.page !== 'tickets') return;
+    const result = await api('/api/tickets/' + encodeURIComponent(id));
+    if (String(state.currentTicketId) !== String(id)) return;
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    const attachments = Array.isArray(result.attachments) ? result.attachments : [];
+    const conversation = content.querySelector('.ticket-conversation');
+    if (conversation) {
+      conversation.innerHTML = messages.map(m=>'<article style="padding:14px;border:1px solid var(--border-color, #ddd);border-radius:10px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><strong>'+escapeHTML(m.sender_name)+' · '+(m.sender_type==='client'?'Cliente':'Equipe')+'</strong><small>'+escapeHTML(dateTime(m.created_at))+'</small></div><p style="white-space:pre-wrap;margin:10px 0 0">'+escapeHTML(m.message)+'</p></article>').join('');
+    }
+    const attachmentPanel = content.querySelector('.ticket-attachments');
+    if (attachmentPanel) {
+      attachmentPanel.innerHTML = '<h3>Anexos</h3>' + (attachments.length ? '<ul>'+attachments.map(a=>'<li><a href="/api/tickets/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(a.id)+'">'+escapeHTML(a.original_name)+'</a> <small>('+Math.max(1,Math.round(Number(a.size_bytes||0)/1024))+' KB · '+(a.uploaded_by_type==='client'?'Cliente':'Equipe')+')</small></li>').join('')+'</ul>' : '<p class="empty-state">Nenhum anexo neste ticket.</p>');
+    }
+    if (messages.length) {
+      const latest = messages[messages.length - 1];
+      if (state.ticketLastMessageId && String(latest.id) !== String(state.ticketLastMessageId) && latest.sender_type === 'client') {
+        notify('Nova mensagem do cliente no ticket #' + id + '.');
+      }
+      state.ticketLastMessageId = latest.id;
+    }
   }
 
   // --------------------------------------------------
@@ -3600,7 +3626,10 @@
 
   // Atualiza a fila automaticamente quando a equipe está na lista de tickets.
   window.setInterval(() => {
-    if (state.user && state.page === 'tickets' && !state.currentTicketId) {
+    if (!state.user || state.page !== 'tickets') return;
+    if (state.currentTicketId) {
+      atualizarConversaTicketSilenciosa().catch(() => {});
+    } else {
       renderTickets().catch(error => notify(error.message, true));
     }
   }, 30000);
