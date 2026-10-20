@@ -333,7 +333,7 @@
     if (!allowed.includes(page)) page = 'dashboard';
 
     if (state.user?.role !== 'admin' && page !== 'finance') {
-      notify('Operadores podem acessar apenas as faturas e cadastrar novos clientes.', true);
+      notify('Operadores podem acessar apenas o financeiro.', true);
       return;
     }
 
