@@ -1758,7 +1758,7 @@
   }
 
   function showCheckoutProResult(result) {
-    const initPoint = typeof result.init_point === 'string' ? result.init_point : '';
+    const initPoint = typeof result.checkout_url === 'string' ? result.checkout_url : (typeof result.init_point === 'string' ? result.init_point : '');
     let safeUrl = '';
     try {
       const parsed = new URL(initPoint);
