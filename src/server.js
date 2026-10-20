@@ -634,10 +634,13 @@ app.get('/api/dashboard', autenticado, somenteAdmin, async (req, res) => {
        WHERE active = 1`
     );
 
+    // Alertar somente serviços cuja etapa operacional ainda exige andamento.
+    // O status do contrato pode permanecer "pending" mesmo após a ativação operacional.
     const [[ativacoes]] = await db.query(
       `SELECT COUNT(*) AS total
        FROM contracted_services
-       WHERE status IN ('pending', 'provisioning')`
+       WHERE COALESCE(operational_status, 'awaiting_payment')
+         IN ('awaiting_payment', 'preparing', 'awaiting_supplier', 'awaiting_client', 'activating')`
     );
 
     const [[usuarios]] = await db.query(
