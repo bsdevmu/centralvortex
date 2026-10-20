@@ -1762,7 +1762,7 @@
     let safeUrl = '';
     try {
       const parsed = new URL(initPoint);
-      if (parsed.protocol === 'https:' && /(^|\\.)mercadopago\\.com(\\.br)?$/i.test(parsed.hostname)) {
+      if (parsed.protocol === 'https:' && /(^|\.)mercadopago\.com(\.br)?$/i.test(parsed.hostname)) {
         safeUrl = parsed.href;
       }
     } catch (_) {}
