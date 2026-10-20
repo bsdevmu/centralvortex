@@ -299,6 +299,32 @@
     `;
   }
 
+  function paymentStatusLabel(status) {
+    if (status === 'paid') return statusLabel('paid');
+    if (status === 'pending' || !status) {
+      return '<span class="status status-pending">Aguardando pagamento</span>';
+    }
+    return statusLabel(status);
+  }
+
+  function operationalStatusLabel(status) {
+    const labels = {
+      awaiting_payment: 'Aguardando pagamento',
+      preparing: 'Em preparação',
+      awaiting_supplier: 'Aguardando fornecedor',
+      awaiting_client: 'Aguardando informações do cliente',
+      activating: 'Em ativação',
+      active: 'Ativo',
+      activation_failed: 'Falha na ativação',
+      suspended: 'Suspenso',
+      cancelled: 'Cancelado'
+    };
+    if (!status) {
+      return '<span class="status status-inactive">Aguardando pagamento</span>';
+    }
+    return `<span class="status status-${escapeHTML(status)}">${escapeHTML(labels[status] || status)}</span>`;
+  }
+
   function featuredLabel(service) {
     const featured = isFeatured(service);
 
@@ -2134,7 +2160,7 @@
         <p class="summary-footer">${orders.length} solicitação(ões) exibida(s).</p>
       </section>
 
-      ${table(['Nº', 'Cliente', 'Serviço', 'Valor', 'Ciclo', 'Solicitada em', 'Status', 'Ação'],
+      ${table(['Nº', 'Cliente', 'Serviço', 'Valor', 'Ciclo', 'Pagamento', 'Estado operacional', 'Solicitada em', 'Aprovação', 'Ação'],
         orders.map(order => [
           escapeHTML(order.id),
           `<strong>${escapeHTML(order.client_name)}</strong>
@@ -2145,6 +2171,8 @@
              : ''}`,
           money(order.amount_snapshot),
           escapeHTML(cycleLabel(order.billing_cycle_snapshot)),
+          paymentStatusLabel(order.payment_status),
+          operationalStatusLabel(order.operational_status),
           dateTime(order.created_at),
           statusLabel(order.approval_status),
           order.approval_status === 'pending'
