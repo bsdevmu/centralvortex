@@ -1414,6 +1414,58 @@ app.patch(
 
 
  // --------------------------------------------------
+// SERVIÇOS CONTRATADOS — VISÃO GLOBAL DE ATIVAÇÕES
+// Somente administradores. Não expõe dados internos de fornecedores.
+// --------------------------------------------------
+app.get('/api/contracted-services', autenticado, somenteAdmin, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         cs.id,
+         cs.client_id,
+         c.name AS client_name,
+         c.email AS client_email,
+         cs.service_id,
+         cs.name,
+         cs.description,
+         cs.status,
+         cs.operational_status,
+         cs.billing_cycle,
+         cs.sale_price,
+         cs.started_at,
+         cs.next_due_date,
+         cs.created_at,
+         cs.updated_at,
+         s.category AS service_category
+       FROM contracted_services cs
+       INNER JOIN clients c ON c.id = cs.client_id
+       LEFT JOIN services s ON s.id = cs.service_id
+       ORDER BY
+         CASE
+           WHEN cs.operational_status IN ('activation_failed', 'awaiting_supplier', 'awaiting_client') THEN 0
+           WHEN cs.operational_status IN ('preparing', 'activating', 'awaiting_payment') THEN 1
+           WHEN cs.operational_status = 'active' THEN 2
+           WHEN cs.operational_status = 'suspended' THEN 3
+           ELSE 4
+         END,
+         cs.updated_at DESC,
+         cs.id DESC
+       LIMIT 1000`
+    );
+
+    return res.json({
+      services: rows.map(service => ({
+        ...service,
+        sale_price: Number(service.sale_price || 0)
+      }))
+    });
+  } catch (e) {
+    console.error('Erro listar serviços contratados:', e.code || e.message || 'erro');
+    return erro(res, 500, 'Não foi possível carregar os serviços contratados.');
+  }
+});
+
+// --------------------------------------------------
  // SERVIÇOS CONTRATADOS — ESTADO OPERACIONAL INTERNO
  // Somente administradores. Não altera financeiro nem status público.
  // --------------------------------------------------
