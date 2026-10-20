@@ -2728,7 +2728,7 @@ app.get('/api/quote-requests', autenticado, somenteAdmin, async (req, res) => {
       `SELECT qr.id, qr.client_id, qr.service_id, qr.customer_notes, qr.status,
               qr.proposed_amount, qr.billing_cycle, qr.proposal_notes, qr.valid_until,
               qr.created_at, qr.updated_at, qr.responded_at,
-              c.name AS client_name, c.email AS client_email,
+              c.name AS client_name, c.email AS client_email, c.phone AS client_phone,
               s.name AS service_name, s.category
        FROM quote_requests qr
        JOIN clients c ON c.id = qr.client_id
