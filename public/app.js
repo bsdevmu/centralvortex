@@ -2454,6 +2454,7 @@
     const staff = Array.isArray(staffResult) ? staffResult : [];
     const ticket = result.ticket;
     const messages = Array.isArray(result.messages) ? result.messages : [];
+    const attachments = Array.isArray(result.attachments) ? result.attachments : [];
     state.currentTicketId = ticket.id;
     content.innerHTML = `
       <div class="page-heading"><div><h2>Ticket #${escapeHTML(ticket.id)} — ${escapeHTML(ticket.subject)}</h2><p>${escapeHTML(ticket.client_name || 'Cliente')} · ${escapeHTML(ticket.client_email || '')}</p></div>
@@ -2481,10 +2482,17 @@
         <div class="ticket-conversation" style="display:grid;gap:12px;margin:18px 0">
           ${messages.map(m=>'<article style="padding:14px;border:1px solid var(--border-color, #ddd);border-radius:10px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><strong>'+escapeHTML(m.sender_name)+' · '+(m.sender_type==='client'?'Cliente':'Equipe')+'</strong><small>'+escapeHTML(dateTime(m.created_at))+'</small></div><p style="white-space:pre-wrap;margin:10px 0 0">'+escapeHTML(m.message)+'</p></article>').join('')}
         </div>
+        <div class="ticket-attachments" style="margin:14px 0">
+          <h3>Anexos</h3>
+          ${attachments.length ? '<ul>'+attachments.map(a=>'<li><a href="/api/tickets/'+encodeURIComponent(ticket.id)+'/attachments/'+encodeURIComponent(a.id)+'">'+escapeHTML(a.original_name)+'</a> <small>('+Math.max(1,Math.round(Number(a.size_bytes||0)/1024))+' KB · '+(a.uploaded_by_type==='client'?'Cliente':'Equipe')+')</small></li>').join('')+'</ul>' : '<p class="empty-state">Nenhum anexo neste ticket.</p>'}
+        </div>
         ${ticket.status === 'closed' ? '<p class="empty-state">Este ticket está encerrado. Altere o status para reabrir e responder.</p>' : `
           <form id="ticket-reply-form" class="form-field">
             <label for="ticket-reply-message">Sua resposta</label>
             <textarea id="ticket-reply-message" name="message" rows="5" maxlength="5000" required placeholder="Escreva uma resposta clara para o cliente..."></textarea>
+            <label for="ticket-reply-file">Anexo (opcional)</label>
+            <input id="ticket-reply-file" name="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.txt">
+            <small>PDF, PNG, JPG ou TXT · até 5 MB.</small>
             <button class="btn btn-primary" type="submit">Enviar resposta ao cliente</button>
           </form>`}
       </section>`;
@@ -2492,12 +2500,18 @@
     form?.addEventListener('submit', async event => {
       event.preventDefault();
       const message = $('#ticket-reply-message')?.value.trim();
+      const file = $('#ticket-reply-file')?.files?.[0];
       if (!message) return;
       const button = form.querySelector('button[type="submit"]');
       button.disabled = true;
       try {
         await api('/api/tickets/' + encodeURIComponent(ticket.id) + '/messages', { method:'POST', body:JSON.stringify({message}) });
-        notify('Resposta enviada ao cliente.');
+        if (file) {
+          const formData = new FormData();
+          formData.append('file', file);
+          await api('/api/tickets/' + encodeURIComponent(ticket.id) + '/attachments', { method:'POST', body:formData });
+        }
+        notify(file ? 'Resposta e anexo enviados ao cliente.' : 'Resposta enviada ao cliente.');
         await openTicket(ticket.id);
       } catch (error) { notify(error.message, true); button.disabled = false; }
     });
