@@ -1703,7 +1703,7 @@
           <button type="button" class="btn btn-small"
             data-action="view-invoice" data-id="${id}">Ver fatura</button>
           <button type="button" class="btn btn-small btn-primary"
-            data-action="generate-pix" data-id="${id}">Gerar PIX</button>
+            data-action="checkout-pro" data-id="${id}">Checkout Pro</button>
           <button type="button" class="btn btn-small"
             data-action="pay-invoice" data-id="${id}">Registrar pagamento</button>
           <button type="button" class="btn btn-small"
@@ -1727,7 +1727,7 @@
       return;
     }
 
-    const canGeneratePix = state.user?.role === 'admin' &&
+    const canGenerateCheckoutPro = state.user?.role === 'admin' &&
       ['pending', 'overdue'].includes(invoice.status);
 
     const modalElement = ensureModal();
@@ -1744,10 +1744,10 @@
           <div class="form-field"><span>Valor</span><strong>${money(invoice.amount)}</strong></div>
           <div class="form-field"><span>Vencimento</span><strong>${date(invoice.due_date)}</strong></div>
           <div class="form-field"><span>Status</span><strong>${statusLabel(invoice.status)}</strong></div>
-          ${canGeneratePix ? `<p>Gere um PIX para esta fatura. A cobrança só será solicitada ao Mercado Pago quando você confirmar o formulário de emissão.</p>` : ''}
+          ${canGenerateCheckoutPro ? `<p>Crie uma preferência do Checkout Pro para gerar um link seguro de pagamento no Mercado Pago.</p>` : ''}
         </div>
         <div class="modal-footer">
-          ${canGeneratePix ? `<button type="button" class="btn btn-primary" data-action="generate-pix" data-id="${escapeHTML(invoice.id)}">Gerar PIX</button>` : ''}
+          ${canGenerateCheckoutPro ? `<button type="button" class="btn btn-primary" data-action="checkout-pro" data-id="${escapeHTML(invoice.id)}">Criar link Checkout Pro</button>` : ''}
           <button type="button" class="btn" data-action="close-modal">Fechar</button>
         </div>
       </section>
@@ -1755,6 +1755,76 @@
     modalElement.hidden = false;
     modalElement.style.display = 'block';
     modalElement.setAttribute('aria-hidden', 'false');
+  }
+
+  function showCheckoutProResult(result) {
+    const initPoint = typeof result.init_point === 'string' ? result.init_point : '';
+    let safeUrl = '';
+    try {
+      const parsed = new URL(initPoint);
+      if (parsed.protocol === 'https:' && /(^|\\.)mercadopago\\.com(\\.br)?$/i.test(parsed.hostname)) {
+        safeUrl = parsed.href;
+      }
+    } catch (_) {}
+
+    const modalElement = ensureModal();
+    modalElement.innerHTML = `
+      <div class="modal-backdrop" data-action="close-modal"></div>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <h2 id="modal-title">Checkout Pro criado — Fatura #${escapeHTML(result.invoice_id)}</h2>
+          <button type="button" class="btn btn-small" data-action="close-modal">Fechar</button>
+        </div>
+        <div class="modal-body">
+          <p><strong>Valor:</strong> ${money(result.amount)}</p>
+          <p><strong>Preferência:</strong> ${escapeHTML(result.preference_id || '—')}</p>
+          <p>A preferência foi criada. O pagamento só será confirmado após a notificação validada do Mercado Pago.</p>
+          ${safeUrl
+            ? `<p><a class="btn btn-primary" href="${escapeHTML(safeUrl)}" target="_blank" rel="noopener noreferrer">Abrir Checkout Pro</a></p>
+               <label class="form-field"><span>Link para enviar ao cliente</span><input id="checkout-pro-link" type="url" readonly value="${escapeHTML(safeUrl)}"></label>
+               <button type="button" class="btn" data-action="copy-checkout-pro">Copiar link</button>`
+            : '<p>O Mercado Pago não retornou um link de checkout válido. Consulte os logs da aplicação.</p>'}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-action="close-modal">Fechar</button>
+        </div>
+      </section>
+    `;
+    modalElement.hidden = false;
+    modalElement.style.display = 'block';
+    modalElement.setAttribute('aria-hidden', 'false');
+  }
+
+  async function generateInvoiceCheckoutPro(invoiceId) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem criar links de Checkout Pro.', true);
+      return;
+    }
+
+    const invoice = findInvoice(invoiceId);
+    if (!invoice) {
+      notify('Fatura não encontrada na lista atual. Atualize a página e tente novamente.', true);
+      return;
+    }
+    if (!['pending', 'overdue'].includes(invoice.status)) {
+      notify('Somente faturas pendentes ou vencidas podem receber um link de Checkout Pro.', true);
+      return;
+    }
+
+    if (!confirm(`Criar um link de Checkout Pro de ${money(invoice.amount)} para a fatura #${invoice.id}?`)) {
+      return;
+    }
+
+    try {
+      const result = await api(`/api/invoices/${encodeURIComponent(invoice.id)}/mercadopago/checkout-pro`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      showCheckoutProResult(result);
+      notify('Preferência Checkout Pro criada.');
+    } catch (error) {
+      notify(error.message || 'Não foi possível criar o link Checkout Pro.', true);
+    }
   }
 
   function showPixResult(result) {
@@ -2840,9 +2910,34 @@
           viewInvoice(element.dataset.id);
           break;
 
-        case 'generate-pix':
-          generateInvoicePix(element.dataset.id);
+        case 'checkout-pro':
+          generateInvoiceCheckoutPro(element.dataset.id);
           break;
+
+        case 'copy-checkout-pro': {
+          const linkField = $('#checkout-pro-link');
+          const link = linkField?.value || '';
+          if (!link) {
+            notify('O link do Checkout Pro não está disponível para copiar.', true);
+            break;
+          }
+          if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(link)
+              .then(() => notify('Link do Checkout Pro copiado.'))
+              .catch(() => {
+                linkField.focus();
+                linkField.select();
+                notify('Selecione o link e copie manualmente.', true);
+              });
+          } else {
+            linkField.focus();
+            linkField.select();
+            const copied = document.execCommand('copy');
+            notify(copied ? 'Link do Checkout Pro copiado.' : 'Selecione o link e copie manualmente.', !copied);
+          }
+          break;
+        }
+
 
         case 'copy-pix': {
           const codeField = $('#pix-copy-code');
