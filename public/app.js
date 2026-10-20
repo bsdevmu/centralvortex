@@ -2420,13 +2420,14 @@
           <div class="form-field"><label for="ticket-filter-priority">Prioridade</label><select id="ticket-filter-priority">${options([['urgent','Urgente'],['high','Alta'],['normal','Normal'],['low','Baixa']],filters.priority,'Todas as prioridades')}</select></div>
           <div class="form-field"><label for="ticket-filter-assignee">Responsável</label><select id="ticket-filter-assignee">${options([['unassigned','Sem responsável'],...people.map(p=>[String(p.id),p.name+' ('+(p.role==='admin'?'Administrador':'Equipe')+')'])],filters.assigned_to,'Todos os responsáveis')}</select></div>
         </div>
-        ${table(['Ticket','Cliente','Assunto / Serviço','Prioridade','Status','Responsável','Última mensagem','Mensagens','Ação'], list.map(t => [
+        ${table(['Ticket','Cliente','Assunto / Serviço','Prioridade','Status','Responsável','Atualização','Última mensagem','Mensagens','Ação'], list.map(t => [
           '<strong>#'+escapeHTML(t.id)+'</strong>',
           '<strong>'+escapeHTML(t.client_name || 'Cliente')+'</strong><br><small>'+escapeHTML(t.client_email || '—')+'</small>',
           '<strong>'+escapeHTML(t.subject)+'</strong><br><small>Serviço: '+escapeHTML(t.service_name || 'Não identificado')+'</small>',
           '<span class="status">'+escapeHTML(ticketPriorityLabel(t.priority))+'</span>',
           '<span class="status status-'+escapeHTML(t.status)+'">'+escapeHTML(ticketStatusLabel(t.status))+'</span>',
           escapeHTML(t.assignee_name || 'Não atribuído'),
+          t.last_sender_type === 'client' ? '<span class="status status-open">Resposta do cliente</span>' : '<span class="status">'+(t.last_sender_type === 'staff' ? 'Última resposta da equipe' : 'Sem mensagens')+'</span>',
           dateTime(t.last_message_at),
           escapeHTML(t.message_count || 0),
           '<button type="button" class="btn btn-small btn-primary" data-action="open-ticket" data-id="'+escapeHTML(t.id)+'">Atender</button>'
