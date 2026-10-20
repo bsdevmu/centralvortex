@@ -553,9 +553,9 @@
       alertas.push({
         nivel: 'info',
         titulo: 'Ativações aguardando andamento',
-        descricao: `${ativacoesPendentes.toLocaleString('pt-BR')} serviço(s) pendente(s) ou em provisionamento`,
-        acao: 'Gerenciar serviços',
-        pagina: 'services'
+        descricao: `${ativacoesPendentes.toLocaleString('pt-BR')} serviço(s) aguardando ativação`,
+        acao: 'Abrir ativações',
+        pagina: 'activations'
       });
     }
 
