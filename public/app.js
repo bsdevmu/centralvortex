@@ -2175,11 +2175,24 @@
           operationalStatusLabel(order.operational_status),
           dateTime(order.created_at),
           statusLabel(order.approval_status),
-          order.approval_status === 'pending'
-            ? `<button type="button" class="btn btn-small btn-primary"
-                 data-action="review-order" data-id="${escapeHTML(order.id)}">Analisar</button>`
-            : `<small>${escapeHTML(order.reviewed_by_name || '—')}<br>${dateTime(order.reviewed_at)}
-                 ${order.admin_notes ? `<br>“${escapeHTML(order.admin_notes)}”` : ''}</small>`
+          `<div class="quick-actions">
+            ${order.approval_status === 'pending'
+              ? `<button type="button" class="btn btn-small btn-primary"
+                   data-action="review-order" data-id="${escapeHTML(order.id)}">Analisar</button>`
+              : `<small>${escapeHTML(order.reviewed_by_name || 'Automático')}<br>${dateTime(order.reviewed_at)}
+                   ${order.admin_notes ? `<br>“${escapeHTML(order.admin_notes)}”` : ''}</small>`}
+            ${order.contracted_service_id && order.payment_status === 'paid'
+              ? `<button type="button" class="btn btn-small"
+                   data-action="change-operational-status"
+                   data-id="${escapeHTML(order.contracted_service_id)}"
+                   data-status="${escapeHTML(order.operational_status || 'awaiting_payment')}"
+                   data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Atualizar etapa</button>
+                 <button type="button" class="btn btn-small"
+                   data-action="view-operational-history"
+                   data-id="${escapeHTML(order.contracted_service_id)}"
+                   data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Histórico</button>`
+              : ''}
+          </div>`
         ]))}
     `;
   }
