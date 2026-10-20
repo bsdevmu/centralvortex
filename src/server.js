@@ -13,7 +13,11 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const db = database;
 
-function categoriaExigeOrcamento(nome, nomePai = '') {
+function categoriaExigeOrcamento(pricingMode, nome = '', nomePai = '') {
+  if (pricingMode === 'quote' || pricingMode === 'fixed') {
+    return pricingMode === 'quote';
+  }
+
   const normalizar = valor => String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
   return [normalizar(nome), normalizar(nomePai)].some(valor => /\bempresas\b|\bsistemas\b|gestao comercial|\bsmartpos\b/.test(valor));
 }
@@ -1819,7 +1823,7 @@ app.get(
     try {
       const [rows] = await db.query(
         `SELECT c.id, c.name, c.slug, c.active, c.sort_order,
-                c.parent_id, c.created_at,
+                c.parent_id, c.created_at, c.pricing_mode,
                 p.name AS parent_name
          FROM service_categories c
          LEFT JOIN service_categories p ON p.id = c.parent_id
@@ -2298,7 +2302,7 @@ app.post('/api/services', autenticado, somenteAdmin, async (req, res) => {
 
     if (categoryId) {
       const [catRows] = await db.query(
-        `SELECT c.name, p.name AS parent_name
+        `SELECT c.name, c.pricing_mode, p.name AS parent_name
          FROM service_categories c
          LEFT JOIN service_categories p ON p.id = c.parent_id
          WHERE c.id = ? AND c.active = 1
@@ -2315,7 +2319,7 @@ app.post('/api/services', autenticado, somenteAdmin, async (req, res) => {
       }
 
       category = catRows[0].name;
-      pricingMode = categoriaExigeOrcamento(catRows[0].name, catRows[0].parent_name) ? 'quote' : 'fixed';
+      pricingMode = categoriaExigeOrcamento(catRows[0].pricing_mode, catRows[0].name, catRows[0].parent_name) ? 'quote' : 'fixed';
     }
 
     const region = textoOpcional(body.region, 100);
@@ -2581,7 +2585,7 @@ app.put('/api/services/:id', autenticado, somenteAdmin, async (req, res) => {
         body[key] !== ''
       ) {
         const [catRows] = await db.query(
-          `SELECT c.name, p.name AS parent_name
+          `SELECT c.name, c.pricing_mode, p.name AS parent_name
            FROM service_categories c
            LEFT JOIN service_categories p ON p.id = c.parent_id
            WHERE c.id = ? AND c.active = 1
