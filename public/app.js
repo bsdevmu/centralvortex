@@ -1161,7 +1161,13 @@
           method: 'PATCH',
           body: JSON.stringify({ operational_status: values.operational_status, note: values.note })
         });
-        if (state.currentClientId) await openClientRecord(state.currentClientId);
+        if (state.currentClientId) {
+          await openClientRecord(state.currentClientId);
+        } else if (state.page === 'orders') {
+          await renderOrders();
+        } else if (state.page === 'services') {
+          await renderServices();
+        }
         return result;
       }
     );
