@@ -8,6 +8,7 @@
     user: null,
     page: 'dashboard',
     currentTicketId: null,
+    ticketFilters: { status: 'all', priority: 'all', assigned_to: 'all' },
     clientSearch: '',
     clientStatus: 'all',
     orderStatus: 'pending',
@@ -2387,12 +2388,22 @@
   }[value] || value || 'Normal');
 
   async function renderTickets() {
-    const [tickets, stats] = await Promise.all([
-      api('/api/tickets'),
-      api('/api/ticket-stats')
+    const filters = state.ticketFilters || { status: 'all', priority: 'all', assigned_to: 'all' };
+    const params = new URLSearchParams();
+    if (filters.status !== 'all') params.set('status', filters.status);
+    if (filters.priority !== 'all') params.set('priority', filters.priority);
+    if (filters.assigned_to !== 'all') params.set('assigned_to', filters.assigned_to);
+    const [tickets, stats, staff] = await Promise.all([
+      api('/api/tickets' + (params.size ? '?' + params.toString() : '')),
+      api('/api/ticket-stats'),
+      api('/api/ticket-staff')
     ]);
     state.cache.tickets = Array.isArray(tickets) ? tickets : [];
     const list = state.cache.tickets;
+    const people = Array.isArray(staff) ? staff : [];
+    const options = (items, current, placeholder) =>
+      '<option value="all" '+(current==='all'?'selected':'')+'>'+placeholder+'</option>' +
+      items.map(([value,label])=>'<option value="'+escapeHTML(value)+'" '+(String(current)===String(value)?'selected':'')+'>'+escapeHTML(label)+'</option>').join('');
     content.innerHTML = `
       ${pageHeader('Atendimento / Tickets', 'Centralize as solicitações abertas no Portal do Cliente e responda pela equipe VortexGrid.')}
       <div class="stats-grid" style="margin-bottom:20px">
@@ -2402,25 +2413,44 @@
         ${statCard('Resolvidos', Number(stats.resolved || 0), 'Atendimentos concluídos')}
       </div>
       <section class="content-card">
-        <div class="card-heading"><div><h2>Fila de atendimento</h2><p>Tickets mais recentes e pendências prioritárias.</p></div>
+        <div class="card-heading"><div><h2>Fila de atendimento</h2><p>Filtre por status, prioridade ou responsável.</p></div>
           <button type="button" class="btn" data-action="refresh-tickets">Atualizar</button></div>
-        ${table(['Ticket','Cliente','Assunto','Prioridade','Status','Última mensagem','Mensagens','Ação'], list.map(t => [
+        <div class="form-grid" style="margin:14px 0">
+          <div class="form-field"><label for="ticket-filter-status">Status</label><select id="ticket-filter-status">${options([['open','Aberto'],['in_progress','Em atendimento'],['waiting_customer','Aguardando cliente'],['resolved','Resolvido'],['closed','Encerrado']],filters.status,'Todos os status')}</select></div>
+          <div class="form-field"><label for="ticket-filter-priority">Prioridade</label><select id="ticket-filter-priority">${options([['urgent','Urgente'],['high','Alta'],['normal','Normal'],['low','Baixa']],filters.priority,'Todas as prioridades')}</select></div>
+          <div class="form-field"><label for="ticket-filter-assignee">Responsável</label><select id="ticket-filter-assignee">${options([['unassigned','Sem responsável'],...people.map(p=>[String(p.id),p.name+' ('+(p.role==='admin'?'Administrador':'Equipe')+')'])],filters.assigned_to,'Todos os responsáveis')}</select></div>
+        </div>
+        ${table(['Ticket','Cliente','Assunto / Serviço','Prioridade','Status','Responsável','Última mensagem','Mensagens','Ação'], list.map(t => [
           '<strong>#'+escapeHTML(t.id)+'</strong>',
           '<strong>'+escapeHTML(t.client_name || 'Cliente')+'</strong><br><small>'+escapeHTML(t.client_email || '—')+'</small>',
           '<strong>'+escapeHTML(t.subject)+'</strong><br><small>Serviço: '+escapeHTML(t.service_name || 'Não identificado')+'</small>',
           '<span class="status">'+escapeHTML(ticketPriorityLabel(t.priority))+'</span>',
           '<span class="status status-'+escapeHTML(t.status)+'">'+escapeHTML(ticketStatusLabel(t.status))+'</span>',
+          escapeHTML(t.assignee_name || 'Não atribuído'),
           dateTime(t.last_message_at),
           escapeHTML(t.message_count || 0),
           '<button type="button" class="btn btn-small btn-primary" data-action="open-ticket" data-id="'+escapeHTML(t.id)+'">Atender</button>'
         ]))}
-        ${list.length ? '' : '<p class="empty-state">Nenhum ticket foi aberto até agora.</p>'}
+        ${list.length ? '' : '<p class="empty-state">Nenhum ticket corresponde aos filtros selecionados.</p>'}
       </section>
     `;
+    const bindFilter = (selector, key) => {
+      $(selector)?.addEventListener('change', event => {
+        state.ticketFilters[key] = event.target.value;
+        renderTickets().catch(error => notify(error.message, true));
+      });
+    };
+    bindFilter('#ticket-filter-status', 'status');
+    bindFilter('#ticket-filter-priority', 'priority');
+    bindFilter('#ticket-filter-assignee', 'assigned_to');
   }
 
   async function openTicket(id) {
-    const result = await api('/api/tickets/' + encodeURIComponent(id));
+    const [result, staffResult] = await Promise.all([
+      api('/api/tickets/' + encodeURIComponent(id)),
+      api('/api/ticket-staff')
+    ]);
+    const staff = Array.isArray(staffResult) ? staffResult : [];
     const ticket = result.ticket;
     const messages = Array.isArray(result.messages) ? result.messages : [];
     state.currentTicketId = ticket.id;
@@ -2436,10 +2466,14 @@
           <div class="form-field"><label for="ticket-priority-select">Prioridade</label><select id="ticket-priority-select">
             ${[['low','Baixa'],['normal','Normal'],['high','Alta'],['urgent','Urgente']].map(([v,l])=>'<option value="'+v+'" '+(ticket.priority===v?'selected':'')+'>'+l+'</option>').join('')}
           </select></div>
+          <div class="form-field"><label for="ticket-assignee-select">Responsável</label><select id="ticket-assignee-select">
+            <option value="" ${ticket.assigned_to ? '' : 'selected'}>Não atribuído</option>
+            ${staff.map(person=>'<option value="'+escapeHTML(person.id)+'" '+(String(ticket.assigned_to||'')===String(person.id)?'selected':'')+'>'+escapeHTML(person.name)+' ('+(person.role==='admin'?'Administrador':'Equipe')+')</option>').join('')}
+          </select></div>
           <div class="form-field"><label>Categoria</label><input value="${escapeHTML(({general:'Geral',billing:'Financeiro',service:'Serviço',technical:'Técnico',account:'Conta'})[ticket.category] || ticket.category)}" disabled></div>
           <div class="form-field"><label>Aberto em</label><input value="${escapeHTML(dateTime(ticket.created_at))}" disabled></div>
         </div>
-        <button type="button" class="btn btn-primary" data-action="save-ticket-settings" data-id="${escapeHTML(ticket.id)}">Salvar status e prioridade</button>
+        <button type="button" class="btn btn-primary" data-action="save-ticket-settings" data-id="${escapeHTML(ticket.id)}">Salvar alterações</button>
       </section>
       <section class="content-card">
         <div class="card-heading"><div><h2>Conversa</h2><p>Histórico completo entre cliente e equipe.</p></div></div>
@@ -2471,7 +2505,8 @@
   async function saveTicketSettings(id) {
     const status = $('#ticket-status-select')?.value;
     const priority = $('#ticket-priority-select')?.value;
-    await api('/api/tickets/' + encodeURIComponent(id), { method:'PATCH', body:JSON.stringify({status,priority}) });
+    const assigned_to = $('#ticket-assignee-select')?.value || null;
+    await api('/api/tickets/' + encodeURIComponent(id), { method:'PATCH', body:JSON.stringify({status,priority,assigned_to}) });
     notify('Ticket atualizado.');
     await openTicket(id);
   }
