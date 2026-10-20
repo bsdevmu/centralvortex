@@ -2293,8 +2293,7 @@
           dateTime(order.created_at),
           statusLabel(order.approval_status),
           `<div class="quick-actions">${order.approval_status === 'pending' ? `<button type="button" class="btn btn-small btn-primary" data-action="review-order" data-id="${escapeHTML(order.id)}">Analisar</button>` : `<small>${escapeHTML(order.reviewed_by_name || 'Automático')}<br>${dateTime(order.reviewed_at)} ${order.admin_notes ? `<br>“${escapeHTML(order.admin_notes)}”` : ''}</small>`}${order.contracted_service_id && order.payment_status === 'paid' ? `<button type="button" class="btn btn-small" data-action="change-operational-status" data-id="${escapeHTML(order.contracted_service_id)}" data-status="${escapeHTML(order.operational_status || 'awaiting_payment')}" data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Atualizar etapa</button><button type="button" class="btn btn-small" data-action="view-operational-history" data-id="${escapeHTML(order.contracted_service_id)}" data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Histórico</button>` : ''}</div>`
-        ])}
-      )
+        ]))}
       <section class="content-card" style="margin-top:24px">
         <div class="panel-heading"><div><h2>Orçamentos personalizados</h2><p>Defina a proposta para Empresas, Sistemas e Gestão Comercial. Nenhuma fatura é criada antes da contratação.</p></div></div>
         <p class="summary-footer">${quotes.length} orçamento(s) registrado(s).</p>
@@ -2308,8 +2307,7 @@
             escapeHTML(q.valid_until || '—'),
             escapeHTML(({requested:'Aguardando orçamento',proposed:'Proposta enviada',accepted:'Aceito pelo cliente',declined:'Recusado pelo cliente',cancelled:'Cancelado'})[q.status] || q.status),
             q.status === 'requested' || q.status === 'proposed' ? `<button type="button" class="btn btn-small btn-primary" data-action="propose-quote" data-id="${escapeHTML(q.id)}">${q.status === 'proposed' ? 'Editar proposta' : 'Enviar proposta'}</button>` : '<small>Sem ações disponíveis</small>'
-          ])}
-        )
+          ]))}
       </section>
     `;
   }
