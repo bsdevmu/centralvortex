@@ -5581,3 +5581,9 @@ body.premium-hybrid-metallic { background:#DFE3E7; }
     transform: none;
   }
 }
+
+
+/* Atendimento / Tickets */
+.ticket-conversation article { background: var(--surface, #fff); }
+#ticket-reply-form textarea { width: 100%; resize: vertical; }
+#ticket-status-select, #ticket-priority-select { width: 100%; }
