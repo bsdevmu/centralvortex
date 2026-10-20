@@ -231,6 +231,195 @@ function normalizarBooleano(valor, padrao = false) {
     valor === 'true';
 }
 
+// Vincula pedidos ao invoice gerado pelo checkout atual do Portal.
+// A descrição contém os IDs dos pedidos; só vincula quando cliente,
+// IDs e soma dos valores conferem exatamente com a fatura.
+async function vincularSolicitacoesDaFatura(conn, invoiceId) {
+  const [invoiceRows] = await conn.query(
+    'SELECT id, client_id, amount, description FROM invoices WHERE id = ? FOR UPDATE',
+    [invoiceId]
+  );
+  const invoice = invoiceRows[0];
+  if (!invoice) return [];
+
+  let [linkedOrders] = await conn.query(
+    `SELECT id, client_id, service_id, description_snapshot, amount_snapshot,
+            billing_cycle_snapshot, approval_status, payment_status,
+            contracted_service_id
+     FROM service_orders
+     WHERE invoice_id = ?
+     ORDER BY id
+     FOR UPDATE`,
+    [invoiceId]
+  );
+  if (linkedOrders.length) return linkedOrders;
+
+  const description = String(invoice.description || '');
+  if (!description.startsWith('Pedido VortexGrid:')) return [];
+
+  const ids = [...description.matchAll(/#(\\d+)/g)].map(match => Number(match[1]));
+  const uniqueIds = [...new Set(ids)];
+  if (!uniqueIds.length || uniqueIds.length > 20 || uniqueIds.some(id => !Number.isSafeInteger(id) || id < 1)) {
+    return [];
+  }
+
+  const placeholders = uniqueIds.map(() => '?').join(',');
+  const [candidateOrders] = await conn.query(
+    `SELECT id, client_id, service_id, description_snapshot, amount_snapshot,
+            billing_cycle_snapshot, approval_status, payment_status,
+            contracted_service_id, invoice_id
+     FROM service_orders
+     WHERE client_id = ? AND id IN (${placeholders})
+     ORDER BY id
+     FOR UPDATE`,
+    [invoice.client_id, ...uniqueIds]
+  );
+
+  if (candidateOrders.length !== uniqueIds.length) return [];
+  if (candidateOrders.some(order => order.invoice_id && Number(order.invoice_id) !== Number(invoiceId))) {
+    return [];
+  }
+
+  const totalOrders = candidateOrders.reduce(
+    (total, order) => total + Math.round(Number(order.amount_snapshot || 0) * 100),
+    0
+  );
+  if (totalOrders !== Math.round(Number(invoice.amount || 0) * 100)) return [];
+
+  await conn.query(
+    `UPDATE service_orders
+     SET invoice_id = ?
+     WHERE client_id = ? AND id IN (${placeholders})
+       AND (invoice_id IS NULL OR invoice_id = ?)`,
+    [invoiceId, invoice.client_id, ...uniqueIds, invoiceId]
+  );
+
+  [linkedOrders] = await conn.query(
+    `SELECT id, client_id, service_id, description_snapshot, amount_snapshot,
+            billing_cycle_snapshot, approval_status, payment_status,
+            contracted_service_id
+     FROM service_orders
+     WHERE invoice_id = ? AND client_id = ?
+     ORDER BY id
+     FOR UPDATE`,
+    [invoiceId, invoice.client_id]
+  );
+  return linkedOrders;
+}
+
+// Avança pedidos somente após confirmação de pagamento. É idempotente:
+// pedidos já vinculados não geram um segundo serviço contratado e estados
+// operacionais que já avançaram nunca são regredidos.
+async function processarSolicitacoesPagas(conn, invoiceId) {
+  const orders = await vincularSolicitacoesDaFatura(conn, invoiceId);
+  let processed = 0;
+
+  for (const order of orders) {
+    if (order.payment_status !== 'paid') {
+      await conn.query(
+        `UPDATE service_orders SET payment_status = 'paid' WHERE id = ?`,
+        [order.id]
+      );
+    }
+
+    if (['rejected', 'cancelled'].includes(order.approval_status)) {
+      continue;
+    }
+
+    let contractedServiceId = order.contracted_service_id
+      ? Number(order.contracted_service_id)
+      : null;
+    let contractedService = null;
+
+    if (contractedServiceId) {
+      const [serviceRows] = await conn.query(
+        'SELECT id, operational_status FROM contracted_services WHERE id = ? FOR UPDATE',
+        [contractedServiceId]
+      );
+      contractedService = serviceRows[0] || null;
+      if (!contractedService) contractedServiceId = null;
+    }
+
+    if (!contractedServiceId) {
+      const [catalogRows] = await conn.query(
+        'SELECT name, description FROM services WHERE id = ? LIMIT 1',
+        [order.service_id]
+      );
+      const catalog = catalogRows[0] || {};
+      const serviceName = order.description_snapshot || catalog.name || 'Serviço contratado';
+      const [insertResult] = await conn.query(
+        `INSERT INTO contracted_services (
+           client_id, service_id, name, description, status,
+           billing_cycle, sale_price, supplier_cost, notes, operational_status
+         ) VALUES (?, ?, ?, ?, 'pending', ?, ?, 0, ?, 'preparing')`,
+        [
+          order.client_id,
+          order.service_id,
+          serviceName,
+          catalog.description || null,
+          order.billing_cycle_snapshot || 'one_time',
+          Number(order.amount_snapshot || 0),
+          `Criado automaticamente após confirmação do pagamento da solicitação #${order.id}.`
+        ]
+      );
+      contractedServiceId = Number(insertResult.insertId);
+      await conn.query(
+        `INSERT INTO contracted_service_status_history
+          (contracted_service_id, previous_status, new_status, note, changed_by)
+         VALUES (?, 'awaiting_payment', 'preparing', ?, NULL)`,
+        [
+          contractedServiceId,
+          `Pagamento da fatura #${invoiceId} confirmado; solicitação #${order.id} encaminhada para preparação.`
+        ]
+      );
+    } else if (contractedService.operational_status === 'awaiting_payment') {
+      await conn.query(
+        `UPDATE contracted_services
+         SET operational_status = 'preparing', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [contractedServiceId]
+      );
+      await conn.query(
+        `INSERT INTO contracted_service_status_history
+          (contracted_service_id, previous_status, new_status, note, changed_by)
+         VALUES (?, 'awaiting_payment', 'preparing', ?, NULL)`,
+        [
+          contractedServiceId,
+          `Pagamento da fatura #${invoiceId} confirmado; solicitação #${order.id} encaminhada para preparação.`
+        ]
+      );
+    }
+
+    if (order.approval_status === 'pending') {
+      const note = `Aprovada automaticamente após confirmação do pagamento da fatura #${invoiceId}.`;
+      await conn.query(
+        `UPDATE service_orders
+         SET payment_status = 'paid',
+             approval_status = 'approved',
+             contracted_service_id = ?,
+             reviewed_at = COALESCE(reviewed_at, CURRENT_TIMESTAMP),
+             admin_notes = CASE
+               WHEN admin_notes IS NULL OR admin_notes = '' THEN ?
+               ELSE CONCAT(admin_notes, CHAR(10), ?)
+             END
+         WHERE id = ?`,
+        [contractedServiceId, note, note, order.id]
+      );
+    } else {
+      await conn.query(
+        `UPDATE service_orders
+         SET payment_status = 'paid', contracted_service_id = ?
+         WHERE id = ?`,
+        [contractedServiceId, order.id]
+      );
+    }
+
+    processed += 1;
+  }
+
+  return processed;
+}
+
 // --------------------------------------------------
 // SAÚDE
 // --------------------------------------------------
@@ -2366,16 +2555,21 @@ app.get('/api/service-orders', autenticado, somenteAdmin, async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT
-         so.id, so.client_id, so.service_id,
+         so.id, so.client_id, so.service_id, so.invoice_id,
+         so.contracted_service_id,
          so.description_snapshot, so.amount_snapshot,
          so.billing_cycle_snapshot, so.approval_status,
          so.payment_status, so.customer_notes, so.admin_notes,
          so.reviewed_by, so.reviewed_at, so.created_at, so.updated_at,
+         i.status AS invoice_status,
+         cs.operational_status,
          c.name AS client_name, c.email AS client_email,
          s.name AS service_name, u.name AS reviewed_by_name
        FROM service_orders so
        INNER JOIN clients c ON c.id = so.client_id
        INNER JOIN services s ON s.id = so.service_id
+       LEFT JOIN invoices i ON i.id = so.invoice_id
+       LEFT JOIN contracted_services cs ON cs.id = so.contracted_service_id
        LEFT JOIN users u ON u.id = so.reviewed_by
        ${where}
        ORDER BY
@@ -2447,7 +2641,8 @@ app.patch(
 
       const [orders] = await conn.query(
         `SELECT id, client_id, service_id, description_snapshot,
-                amount_snapshot, billing_cycle_snapshot, approval_status
+                amount_snapshot, billing_cycle_snapshot, approval_status,
+                payment_status, invoice_id, contracted_service_id
          FROM service_orders
          WHERE id = ?
          FOR UPDATE`,
@@ -2510,21 +2705,50 @@ app.patch(
 
         const service = services[0];
 
-        await conn.query(
-          `INSERT INTO contracted_services (
-             client_id, service_id, name, description, status,
-             billing_cycle, sale_price, supplier_cost, notes
-           ) VALUES (?, ?, ?, ?, 'pending', ?, ?, 0, ?)`,
-          [
-            order.client_id,
-            order.service_id,
-            service.name || order.description_snapshot,
-            service.description || null,
-            order.billing_cycle_snapshot,
-            Number(order.amount_snapshot || 0),
-            `Criado pela aprovação da solicitação #${order.id}.`
-          ]
-        );
+        const [existingServiceRows] = order.contracted_service_id
+          ? await conn.query(
+              'SELECT id FROM contracted_services WHERE id = ? LIMIT 1',
+              [order.contracted_service_id]
+            )
+          : [[]];
+
+        if (existingServiceRows.length) {
+          contractedServiceId = Number(existingServiceRows[0].id);
+        } else {
+          const operationalStatus = order.payment_status === 'paid'
+            ? 'preparing'
+            : 'awaiting_payment';
+          const [createdService] = await conn.query(
+            `INSERT INTO contracted_services (
+               client_id, service_id, name, description, status,
+               billing_cycle, sale_price, supplier_cost, notes, operational_status
+             ) VALUES (?, ?, ?, ?, 'pending', ?, ?, 0, ?, ?)`,
+            [
+              order.client_id,
+              order.service_id,
+              order.description_snapshot || service.name,
+              service.description || null,
+              order.billing_cycle_snapshot,
+              Number(order.amount_snapshot || 0),
+              `Criado pela aprovação da solicitação #${order.id}.`,
+              operationalStatus
+            ]
+          );
+          contractedServiceId = Number(createdService.insertId);
+
+          if (operationalStatus === 'preparing') {
+            await conn.query(
+              `INSERT INTO contracted_service_status_history
+                (contracted_service_id, previous_status, new_status, note, changed_by)
+               VALUES (?, 'awaiting_payment', 'preparing', ?, ?)`,
+              [
+                contractedServiceId,
+                `Serviço da solicitação #${order.id} já estava pago no momento da aprovação.`,
+                req.session.user.id
+              ]
+            );
+          }
+        }
       }
 
       await conn.query(
@@ -2532,12 +2756,14 @@ app.patch(
          SET approval_status = ?,
              admin_notes = ?,
              reviewed_by = ?,
-             reviewed_at = CURRENT_TIMESTAMP
+             reviewed_at = CURRENT_TIMESTAMP,
+             contracted_service_id = COALESCE(?, contracted_service_id)
          WHERE id = ?`,
         [
           decision,
           adminNotes || null,
           req.session.user.id,
+          contractedServiceId || null,
           orderId
         ]
       );
@@ -2696,10 +2922,12 @@ app.post('/api/invoices/:id/payments', autenticado, somenteAdmin, async (req, re
       [invoice.id]
     );
 
+    const solicitacoesProcessadas = await processarSolicitacoesPagas(conn, invoice.id);
     await conn.commit();
 
     return res.status(201).json({
-      mensagem: 'Pagamento registrado.'
+      mensagem: 'Pagamento registrado.',
+      solicitacoes_processadas: solicitacoesProcessadas
     });
   } catch (e) {
     if (conn) {
@@ -3512,6 +3740,7 @@ app.post('/api/admin/mercadopago/conciliar/:paymentId', autenticado, somenteAdmi
       [local.invoice_id]
     );
 
+    const solicitacoesProcessadas = await processarSolicitacoesPagas(conn, local.invoice_id);
     await conn.commit();
 
     console.info('Conciliação manual Mercado Pago concluída.', {
@@ -3528,6 +3757,7 @@ app.post('/api/admin/mercadopago/conciliar/:paymentId', autenticado, somenteAdmi
       status_transacao_local: 'approved',
       status_fatura: 'paid',
       recebimento_novo: paymentRecorded,
+      solicitacoes_processadas: solicitacoesProcessadas,
       mensagem: paymentRecorded
         ? 'Pagamento validado e recebimento registrado; fatura marcada como paga.'
         : 'Pagamento já estava registrado; fatura confirmada como paga sem duplicar o recebimento.'
@@ -3661,6 +3891,8 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
         );
       }
       await conn.query("UPDATE invoices SET status = 'paid' WHERE id = ?", [local.invoice_id]);
+      const solicitacoesProcessadas = await processarSolicitacoesPagas(conn, local.invoice_id);
+      local.solicitacoes_processadas = solicitacoesProcessadas;
     }
 
     await conn.commit();
@@ -3669,7 +3901,11 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
       invoiceId: local.invoice_id,
       status
     });
-    return res.status(200).json({ recebido: true, status });
+    return res.status(200).json({
+      recebido: true,
+      status,
+      solicitacoes_processadas: Number(local.solicitacoes_processadas || 0)
+    });
   } catch (e) {
     if (conn) await conn.rollback().catch(() => {});
     console.error('Erro webhook Mercado Pago:', e.message || e.code || 'erro');
