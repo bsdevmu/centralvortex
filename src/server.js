@@ -3046,6 +3046,16 @@ app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin
       return erro(res, 409, 'Somente faturas pendentes ou vencidas podem receber um link de Checkout Pro.');
     }
 
+    // O ambiente foi definido como TESTE: bloqueia a criação de links reais
+    // caso alguém configure por engano um Access Token de produção.
+    if (!String(process.env.MP_ACCESS_TOKEN).startsWith('TEST-')) {
+      return erro(res, 409, 'Checkout Pro está configurado para TESTE. Configure um MP_ACCESS_TOKEN iniciado por TEST- para continuar.');
+    }
+
+    if (!validarEmail(invoice.client_email)) {
+      return erro(res, 400, 'O cadastro do cliente precisa ter um e-mail válido antes de criar o checkout.');
+    }
+
     const amount = Number(invoice.amount);
     if (!Number.isFinite(amount) || amount < 0.01 || amount > 99999999) {
       return erro(res, 400, 'Valor da fatura inválido para emissão do Checkout Pro.');
@@ -3072,12 +3082,18 @@ app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin
         failure: `${baseUrl}/?checkout=failure&invoice_id=${invoice.id}`
       },
       auto_return: 'approved',
-      statement_descriptor: 'VORTEXGRID'
+      // Identificação curta da marca na cobrança; a personalização visual
+      // completa do checkout é limitada ao que o Mercado Pago disponibiliza.
+      statement_descriptor: 'VORTEXGRID',
+      payer: { email: invoice.client_email },
+      // Não definimos installments: o Checkout Pro aplica as condições
+      // de parcelamento disponíveis para a conta e para o comprador.
+      payment_methods: {
+        // Mantém Pix, cartões e saldo Mercado Pago; remove boleto/lotérica
+        // do checkout padrão. A disponibilidade final depende da conta.
+        excluded_payment_types: [{ id: 'ticket' }]
+      }
     };
-
-    if (validarEmail(invoice.client_email)) {
-      payload.payer = { email: invoice.client_email };
-    }
 
     const preference = await mercadoPagoRequest(`${MP_API_BASE}/checkout/preferences`, {
       method: 'POST',
