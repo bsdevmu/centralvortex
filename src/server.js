@@ -257,7 +257,7 @@ async function vincularSolicitacoesDaFatura(conn, invoiceId) {
   const description = String(invoice.description || '');
   if (!description.startsWith('Pedido VortexGrid:')) return [];
 
-  const ids = [...description.matchAll(/#(\\d+)/g)].map(match => Number(match[1]));
+  const ids = [...description.matchAll(/#(\d+)/g)].map(match => Number(match[1]));
   const uniqueIds = [...new Set(ids)];
   if (!uniqueIds.length || uniqueIds.length > 20 || uniqueIds.some(id => !Number.isSafeInteger(id) || id < 1)) {
     return [];
