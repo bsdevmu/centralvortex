@@ -3046,10 +3046,15 @@ app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin
       return erro(res, 409, 'Somente faturas pendentes ou vencidas podem receber um link de Checkout Pro.');
     }
 
-    // O ambiente foi definido como TESTE: bloqueia a criação de links reais
-    // caso alguém configure por engano um Access Token de produção.
-    if (!String(process.env.MP_ACCESS_TOKEN).startsWith('TEST-')) {
-      return erro(res, 409, 'Checkout Pro está configurado para TESTE. Configure um MP_ACCESS_TOKEN iniciado por TEST- para continuar.');
+    // Checkout Pro usa credenciais APP_USR também para contas de vendedor de teste.
+    // O operador confirma que o token veio da aba "Credenciais de teste" e define
+    // MP_ENVIRONMENT=test. O prefixo sozinho não distingue credenciais de teste
+    // de produção, então nunca inferimos o ambiente apenas pelo Access Token.
+    if (String(process.env.MP_ENVIRONMENT || '').trim().toLowerCase() !== 'test') {
+      return erro(res, 409, 'Checkout Pro não está habilitado para teste. Configure MP_ENVIRONMENT=test e use as credenciais da aba Credenciais de teste.');
+    }
+    if (!String(process.env.MP_ACCESS_TOKEN || '').startsWith('APP_USR-')) {
+      return erro(res, 409, 'O Access Token não parece ser uma credencial válida de Checkout Pro. Confira a aba Credenciais de teste da aplicação.');
     }
 
     if (!validarEmail(invoice.client_email)) {
@@ -3123,15 +3128,10 @@ app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin
       [invoice.id, preferenceId, externalReference, amount, initPoint, sandboxInitPoint]
     );
 
-    // Em teste, nunca redirecionar para init_point de produção por fallback.
-    if (!sandboxInitPoint) {
-      console.error('Preferência de teste sem sandbox_init_point.', {
-        preferenceIdPresent: Boolean(preferenceId)
-      });
-      return erro(res, 502, 'O Mercado Pago não retornou sandbox_init_point para o checkout de teste. Verifique as credenciais de teste da aplicação.');
-    }
-
-    const checkoutUrl = sandboxInitPoint;
+    // Checkout Pro com vendedor/comprador de teste usa init_point.
+    // A simulação depende de usar as credenciais do vendedor de teste e entrar
+    // no checkout com a conta compradora de teste, não de sandbox_init_point.
+    const checkoutUrl = initPoint;
 
     return res.status(201).json({
       mensagem: 'Preferência Checkout Pro criada.',
