@@ -7,6 +7,7 @@
   const state = {
     user: null,
     page: 'dashboard',
+    currentTicketId: null,
     clientSearch: '',
     clientStatus: 'all',
     orderStatus: 'pending',
@@ -354,6 +355,7 @@
       'activations',
       'categories',
       'orders',
+      'tickets',
       'finance',
       'users'
     ];
@@ -397,6 +399,7 @@
       activations: 'Ativações e serviços contratados',
       categories: 'Categorias de serviços',
       orders: 'Solicitações',
+      tickets: 'Atendimento / Tickets',
       finance: 'Financeiro',
       users: 'Usuários'
     };
@@ -431,6 +434,9 @@
           break;
         case 'orders':
           await renderOrders();
+          break;
+        case 'tickets':
+          await renderTickets();
           break;
         case 'finance':
           await renderFinance();
@@ -2369,6 +2375,107 @@
   }
 
   // --------------------------------------------------
+  // ATENDIMENTO / TICKETS
+  // --------------------------------------------------
+
+  const ticketStatusLabel = value => ({
+    open: 'Aberto', in_progress: 'Em atendimento',
+    waiting_customer: 'Aguardando cliente', resolved: 'Resolvido', closed: 'Encerrado'
+  }[value] || value || '—');
+  const ticketPriorityLabel = value => ({
+    low: 'Baixa', normal: 'Normal', high: 'Alta', urgent: 'Urgente'
+  }[value] || value || 'Normal');
+
+  async function renderTickets() {
+    const [tickets, stats] = await Promise.all([
+      api('/api/tickets'),
+      api('/api/ticket-stats')
+    ]);
+    state.cache.tickets = Array.isArray(tickets) ? tickets : [];
+    const list = state.cache.tickets;
+    content.innerHTML = `
+      ${pageHeader('Atendimento / Tickets', 'Centralize as solicitações abertas no Portal do Cliente e responda pela equipe VortexGrid.')}
+      <div class="stats-grid" style="margin-bottom:20px">
+        ${statCard('Abertos', Number(stats.open || 0), 'Aguardando triagem')}
+        ${statCard('Em atendimento', Number(stats.in_progress || 0), 'Em andamento')}
+        ${statCard('Aguardando cliente', Number(stats.waiting_customer || 0), 'Dependem de retorno')}
+        ${statCard('Resolvidos', Number(stats.resolved || 0), 'Atendimentos concluídos')}
+      </div>
+      <section class="content-card">
+        <div class="card-heading"><div><h2>Fila de atendimento</h2><p>Tickets mais recentes e pendências prioritárias.</p></div>
+          <button type="button" class="btn" data-action="refresh-tickets">Atualizar</button></div>
+        ${table(['Ticket','Cliente','Assunto','Prioridade','Status','Última mensagem','Mensagens','Ação'], list.map(t => [
+          '<strong>#'+escapeHTML(t.id)+'</strong>',
+          '<strong>'+escapeHTML(t.client_name || 'Cliente')+'</strong><br><small>'+escapeHTML(t.client_email || '—')+'</small>',
+          escapeHTML(t.subject),
+          '<span class="status">'+escapeHTML(ticketPriorityLabel(t.priority))+'</span>',
+          statusLabel(t.status),
+          dateTime(t.last_message_at),
+          escapeHTML(t.message_count || 0),
+          '<button type="button" class="btn btn-small btn-primary" data-action="open-ticket" data-id="'+escapeHTML(t.id)+'">Atender</button>'
+        ]))}
+        ${list.length ? '' : '<p class="empty-state">Nenhum ticket foi aberto até agora.</p>'}
+      </section>
+    `;
+  }
+
+  async function openTicket(id) {
+    const result = await api('/api/tickets/' + encodeURIComponent(id));
+    const ticket = result.ticket;
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    state.currentTicketId = ticket.id;
+    content.innerHTML = `
+      <div class="page-heading"><div><h2>Ticket #${escapeHTML(ticket.id)} — ${escapeHTML(ticket.subject)}</h2><p>${escapeHTML(ticket.client_name || 'Cliente')} · ${escapeHTML(ticket.client_email || '')}</p></div>
+        <button type="button" class="btn" data-action="tickets-back">← Voltar aos tickets</button></div>
+      <section class="content-card" style="margin-bottom:18px">
+        <div class="form-grid">
+          <div class="form-field"><label for="ticket-status-select">Status</label><select id="ticket-status-select">
+            ${[['open','Aberto'],['in_progress','Em atendimento'],['waiting_customer','Aguardando cliente'],['resolved','Resolvido'],['closed','Encerrado']].map(([v,l])=>'<option value="'+v+'" '+(ticket.status===v?'selected':'')+'>'+l+'</option>').join('')}
+          </select></div>
+          <div class="form-field"><label for="ticket-priority-select">Prioridade</label><select id="ticket-priority-select">
+            ${[['low','Baixa'],['normal','Normal'],['high','Alta'],['urgent','Urgente']].map(([v,l])=>'<option value="'+v+'" '+(ticket.priority===v?'selected':'')+'>'+l+'</option>').join('')}
+          </select></div>
+          <div class="form-field"><label>Categoria</label><input value="${escapeHTML(({general:'Geral',billing:'Financeiro',service:'Serviço',technical:'Técnico',account:'Conta'})[ticket.category] || ticket.category)}" disabled></div>
+          <div class="form-field"><label>Aberto em</label><input value="${escapeHTML(dateTime(ticket.created_at))}" disabled></div>
+        </div>
+        <button type="button" class="btn btn-primary" data-action="save-ticket-settings" data-id="${escapeHTML(ticket.id)}">Salvar status e prioridade</button>
+      </section>
+      <section class="content-card">
+        <div class="card-heading"><div><h2>Conversa</h2><p>Histórico completo entre cliente e equipe.</p></div></div>
+        <div class="ticket-conversation" style="display:grid;gap:12px;margin:18px 0">
+          ${messages.map(m=>'<article style="padding:14px;border:1px solid var(--border-color, #ddd);border-radius:10px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><strong>'+escapeHTML(m.sender_name)+' · '+(m.sender_type==='client'?'Cliente':'Equipe')+'</strong><small>'+escapeHTML(dateTime(m.created_at))+'</small></div><p style="white-space:pre-wrap;margin:10px 0 0">'+escapeHTML(m.message)+'</p></article>').join('')}
+        </div>
+        ${ticket.status === 'closed' ? '<p class="empty-state">Este ticket está encerrado. Altere o status para reabrir e responder.</p>' : `
+          <form id="ticket-reply-form" class="form-field">
+            <label for="ticket-reply-message">Sua resposta</label>
+            <textarea id="ticket-reply-message" name="message" rows="5" maxlength="5000" required placeholder="Escreva uma resposta clara para o cliente..."></textarea>
+            <button class="btn btn-primary" type="submit">Enviar resposta ao cliente</button>
+          </form>`}
+      </section>`;
+    const form = $('#ticket-reply-form');
+    form?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const message = $('#ticket-reply-message')?.value.trim();
+      if (!message) return;
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        await api('/api/tickets/' + encodeURIComponent(ticket.id) + '/messages', { method:'POST', body:JSON.stringify({message}) });
+        notify('Resposta enviada ao cliente.');
+        await openTicket(ticket.id);
+      } catch (error) { notify(error.message, true); button.disabled = false; }
+    });
+  }
+
+  async function saveTicketSettings(id) {
+    const status = $('#ticket-status-select')?.value;
+    const priority = $('#ticket-priority-select')?.value;
+    await api('/api/tickets/' + encodeURIComponent(id), { method:'PATCH', body:JSON.stringify({status,priority}) });
+    notify('Ticket atualizado.');
+    await openTicket(id);
+  }
+
+  // --------------------------------------------------
   // USUÁRIOS
   // --------------------------------------------------
 
@@ -3029,6 +3136,19 @@
 
     try {
       switch (action) {
+        case 'open-ticket':
+          openTicket(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+        case 'refresh-tickets':
+          renderTickets().catch(error => notify(error.message, true));
+          break;
+        case 'tickets-back':
+          navigate('tickets');
+          break;
+        case 'save-ticket-settings':
+          saveTicketSettings(element.dataset.id).catch(error => notify(error.message, true));
+          break;
+
         case 'new-client':
           createClient();
           break;
