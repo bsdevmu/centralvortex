@@ -1003,7 +1003,7 @@
         </div>
 
         ${contractedServices.length ? table(
-          ['Serviço', 'Categoria', 'Valor', 'Cobrança', 'Status', 'Próximo vencimento', 'Vinculado em', 'Ação'],
+          ['Serviço', 'Categoria', 'Valor', 'Cobrança', 'Status', 'Estado operacional interno', 'Próximo vencimento', 'Vinculado em', 'Ação'],
           contractedServices.map(service => [
             `<strong>${escapeHTML(service.name || 'Serviço')}</strong>${service.description ? `<div class="summary-footer">${escapeHTML(service.description)}</div>` : ''}`,
             escapeHTML(service.service_category || '—'),
@@ -1014,6 +1014,9 @@
               yearly: 'Anual'
             }[service.billing_cycle] || service.billing_cycle || '—'),
             statusLabel(service.status),
+            state.user?.role === 'admin'
+              ? `<div><strong>${escapeHTML(operationalStatusLabel(service.operational_status))}</strong><div class="summary-footer" style="margin-top:6px"><button type="button" class="btn btn-small" data-action="change-operational-status" data-id="${escapeHTML(service.id)}" data-status="${escapeHTML(service.operational_status || 'awaiting_payment')}" data-name="${escapeHTML(service.name || 'Serviço')}">Alterar estado interno</button> <button type="button" class="btn btn-small" data-action="view-operational-history" data-id="${escapeHTML(service.id)}" data-name="${escapeHTML(service.name || 'Serviço')}">Histórico</button></div></div>`
+              : 'Em acompanhamento',
             date(service.next_due_date),
             date(service.created_at),
             contractedServiceAction(service)
@@ -1078,6 +1081,84 @@
         <button type="button" class="btn btn-primary" data-action="edit-client" data-id="${escapeHTML(client.id)}">Editar cadastro</button>
       </div>
     `;
+  }
+
+
+  const operationalStatusNames = {
+    awaiting_payment: 'Aguardando pagamento',
+    preparing: 'Em preparação',
+    awaiting_supplier: 'Aguardando fornecedor',
+    awaiting_client: 'Aguardando informações do cliente',
+    activating: 'Em ativação',
+    active: 'Ativo',
+    activation_failed: 'Falha na ativação',
+    suspended: 'Suspenso',
+    cancelled: 'Cancelado'
+  };
+
+  function operationalStatusLabel(value) {
+    return operationalStatusNames[String(value || 'awaiting_payment')] || 'Aguardando pagamento';
+  }
+
+  function changeOperationalStatus(serviceId, currentStatus, serviceName) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem alterar o estado operacional.', true);
+      return;
+    }
+    const id = Number(serviceId);
+    if (!Number.isSafeInteger(id) || id < 1) {
+      notify('Identificador de serviço inválido.', true);
+      return;
+    }
+    const options = Object.entries(operationalStatusNames).map(([value, label]) => ({ value, label }));
+    openModal(
+      `Estado operacional interno — ${serviceName || 'Serviço'}`,
+      `
+        <p class="summary-footer" style="margin-bottom:14px">
+          Exclusivo da Central Administrativa. Não altera pagamento, fatura nem o status público do serviço.
+        </p>
+        ${field('Estado atual', 'current_status', 'text', true, [{ value: currentStatus, label: operationalStatusLabel(currentStatus) }], currentStatus)}
+        ${field('Novo estado', 'operational_status', 'text', true, options, currentStatus)}
+        ${field('Observação interna obrigatória', 'note', 'textarea', true, null, '')}
+      `,
+      async values => {
+        if (!options.some(option => option.value === values.operational_status)) throw new Error('Selecione um estado operacional válido.');
+        if (values.operational_status === currentStatus) throw new Error('Selecione um estado diferente do atual.');
+        if (values.operational_status === 'cancelled' && !confirm(`Confirma marcar "${serviceName || 'Serviço'}" como cancelado no fluxo operacional?`)) {
+          throw new Error('Cancelamento não confirmado.');
+        }
+        const result = await api(`/api/contracted-services/${encodeURIComponent(id)}/operational-status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ operational_status: values.operational_status, note: values.note })
+        });
+        if (state.currentClientId) await openClientRecord(state.currentClientId);
+        return result;
+      }
+    );
+  }
+
+  async function viewOperationalHistory(serviceId, serviceName) {
+    if (state.user?.role !== 'admin') {
+      notify('O histórico operacional é restrito a administradores.', true);
+      return;
+    }
+    try {
+      const result = await api(`/api/contracted-services/${encodeURIComponent(serviceId)}/operational-history`);
+      const rows = Array.isArray(result.historico) ? result.historico : [];
+      const body = rows.length ? table(
+        ['Data', 'Estado anterior', 'Novo estado', 'Responsável', 'Observação interna'],
+        rows.map(item => [
+          dateTime(item.changed_at),
+          escapeHTML(operationalStatusLabel(item.previous_status)),
+          escapeHTML(operationalStatusLabel(item.new_status)),
+          escapeHTML(item.changed_by_name || 'Usuário indisponível'),
+          escapeHTML(item.note || '—')
+        ])
+      ) : '<div class="empty-state"><p>Nenhuma alteração operacional registrada ainda.</p></div>';
+      openModal(`Histórico operacional — ${serviceName || 'Serviço'}`, body, async () => ({ mensagem: 'Histórico consultado.' }), { submitLabel: 'Fechar', successMessage: 'Histórico consultado.' });
+    } catch (error) {
+      notify(error.message || 'Não foi possível carregar o histórico.', true);
+    }
   }
 
   // --------------------------------------------------
@@ -2798,6 +2879,14 @@
             element.dataset.status,
             element.dataset.name
           );
+          break;
+
+        case 'change-operational-status':
+          changeOperationalStatus(element.dataset.id, element.dataset.status, element.dataset.name);
+          break;
+
+        case 'view-operational-history':
+          viewOperationalHistory(element.dataset.id, element.dataset.name);
           break;
 
         case 'new-invoice-for-client':
