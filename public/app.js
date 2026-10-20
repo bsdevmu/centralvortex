@@ -2428,7 +2428,7 @@
           '<span class="status">'+escapeHTML(ticketPriorityLabel(t.priority))+'</span>',
           '<span class="status status-'+escapeHTML(t.status)+'">'+escapeHTML(ticketStatusLabel(t.status))+'</span>',
           escapeHTML(t.assignee_name || 'Não atribuído'),
-          t.last_sender_type === 'client' ? '<span class="status status-open">Resposta do cliente</span>' : '<span class="status">'+(t.last_sender_type === 'staff' ? 'Última resposta da equipe' : 'Sem mensagens')+'</span>',
+          t.last_sender_type === 'client' ? '<span class="status status-open">Última mensagem do cliente</span>' : '<span class="status">'+(t.last_sender_type === 'staff' ? 'Última resposta da equipe' : 'Sem mensagens')+'</span>',
           dateTime(t.last_message_at),
           escapeHTML(t.message_count || 0),
           '<button type="button" class="btn btn-small btn-primary" data-action="open-ticket" data-id="'+escapeHTML(t.id)+'">Atender</button>'
