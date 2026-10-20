@@ -3046,15 +3046,14 @@ app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin
       return erro(res, 409, 'Somente faturas pendentes ou vencidas podem receber um link de Checkout Pro.');
     }
 
-    // Checkout Pro usa credenciais APP_USR também para contas de vendedor de teste.
-    // O operador confirma que o token veio da aba "Credenciais de teste" e define
-    // MP_ENVIRONMENT=test. O prefixo sozinho não distingue credenciais de teste
-    // de produção, então nunca inferimos o ambiente apenas pelo Access Token.
-    if (String(process.env.MP_ENVIRONMENT || '').trim().toLowerCase() !== 'test') {
-      return erro(res, 409, 'Checkout Pro não está habilitado para teste. Configure MP_ENVIRONMENT=test e use as credenciais da aba Credenciais de teste.');
+    // Checkout Pro em produção: usar somente credenciais oficiais de produção.
+    // MP_ENVIRONMENT é uma confirmação explícita do operador; o prefixo APP_USR-
+    // sozinho não diferencia tokens de produção de tokens de contas de teste.
+    if (String(process.env.MP_ENVIRONMENT || '').trim().toLowerCase() !== 'production') {
+      return erro(res, 409, 'Checkout Pro está bloqueado até configurar MP_ENVIRONMENT=production e credenciais oficiais de produção no servidor.');
     }
     if (!String(process.env.MP_ACCESS_TOKEN || '').startsWith('APP_USR-')) {
-      return erro(res, 409, 'O Access Token não parece ser uma credencial válida de Checkout Pro. Confira a aba Credenciais de teste da aplicação.');
+      return erro(res, 409, 'O Access Token não parece válido. Confira as Credenciais de produção da aplicação Central VortexGrid.');
     }
 
     if (!validarEmail(invoice.client_email)) {
