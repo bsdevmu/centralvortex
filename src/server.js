@@ -3107,6 +3107,10 @@ app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin
       [invoice.id, preferenceId, externalReference, amount, initPoint, sandboxInitPoint]
     );
 
+    const checkoutUrl = String(process.env.MP_ACCESS_TOKEN).startsWith('TEST-')
+      ? (sandboxInitPoint || initPoint)
+      : initPoint;
+
     return res.status(201).json({
       mensagem: 'Preferência Checkout Pro criada.',
       invoice_id: invoice.id,
@@ -3114,7 +3118,8 @@ app.post('/api/invoices/:id/mercadopago/checkout-pro', autenticado, somenteAdmin
       external_reference: externalReference,
       amount,
       init_point: initPoint,
-      sandbox_init_point: sandboxInitPoint
+      sandbox_init_point: sandboxInitPoint,
+      checkout_url: checkoutUrl
     });
   } catch (e) {
     console.error('Erro criar preferência Checkout Pro:', e.message || e.code || 'erro');
