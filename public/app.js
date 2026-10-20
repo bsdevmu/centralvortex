@@ -742,6 +742,10 @@
     }
 
     return `
+      <button type="button" class="btn btn-small"
+        data-action="edit-contracted-service-details"
+        data-id="${escapeHTML(service.id)}"
+        data-name="${escapeHTML(service.name || 'Serviço')}">Informações</button>
       <button type="button" class="btn btn-small btn-primary"
         data-action="change-contracted-service-status"
         data-id="${escapeHTML(service.id)}"
@@ -897,6 +901,49 @@
         <button type="button" class="btn btn-primary" data-action="edit-client" data-id="${escapeHTML(client.id)}">Editar cadastro</button>
       </div>
     `;
+  }
+
+  // --------------------------------------------------
+  // INFORMAÇÕES PERSONALIZADAS DO SERVIÇO CONTRATADO
+  // --------------------------------------------------
+  async function openContractedServiceDetails(serviceId, serviceName) {
+    if (state.user?.role !== 'admin') {
+      notify('Apenas administradores podem editar as informações do serviço.', true);
+      return;
+    }
+    const id = Number(serviceId);
+    if (!Number.isSafeInteger(id) || id < 1) throw new Error('Identificador de serviço inválido.');
+    const response = await api(`/api/contracted-services/${encodeURIComponent(id)}/details`);
+    const details = Array.isArray(response.details) ? response.details : [];
+    const lines = details.map(item => `${item.label} | ${item.value}`).join('\n');
+    openModal(
+      `Informações do serviço — ${serviceName || 'Serviço'}`,
+      `
+        <p class="summary-footer" style="margin-bottom:14px">
+          Cadastre os dados específicos desta contratação que o cliente poderá consultar.
+          Use uma linha por informação no formato <strong>Título | Valor</strong>.
+          Exemplo: IP do servidor | 192.0.2.10
+        </p>
+        ${field('Informações visíveis ao cliente', 'details_text', 'textarea', false, null, lines)}
+        <p class="summary-footer">Até 30 linhas. Não inclua fornecedor, custo interno ou observações administrativas.</p>
+      `,
+      async values => {
+        const parsed = String(values.details_text || '')
+          .split(/\r?\n/)
+          .map(line => line.trim())
+          .filter(Boolean)
+          .map(line => {
+            const separator = line.indexOf('|');
+            if (separator < 1) throw new Error('Use o formato Título | Valor em cada linha.');
+            return { label: line.slice(0, separator).trim(), value: line.slice(separator + 1).trim() };
+          });
+        if (parsed.length > 30) throw new Error('Cadastre no máximo 30 informações.');
+        return api(`/api/contracted-services/${encodeURIComponent(id)}/details`, {
+          method: 'PUT', body: JSON.stringify({ details: parsed })
+        });
+      },
+      { successMessage: 'Informações do serviço salvas.' }
+    );
   }
 
   // --------------------------------------------------
@@ -2413,6 +2460,11 @@
             element.dataset.status,
             element.dataset.name
           );
+          break;
+
+        case 'edit-contracted-service-details':
+          openContractedServiceDetails(element.dataset.id, element.dataset.name)
+            .catch(error => notify(error.message, true));
           break;
 
         case 'new-invoice-for-client':
