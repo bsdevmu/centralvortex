@@ -238,7 +238,7 @@ const domainLookupTldsCompostos = new Set([
 
 function dominioParaConsulta(valor) {
   if (typeof valor !== 'string') return null;
-  const dominio = valor.trim().toLowerCase().replace(/\\.$/, '');
+  const dominio = valor.trim().toLowerCase().replace(/\.$/, '');
   if (dominio.length > 253 || !/^[a-z0-9.-]+$/.test(dominio) || dominio.includes('..')) return null;
   const partes = dominio.split('.');
   if (partes.some(parte => !parte || parte.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(parte))) return null;
