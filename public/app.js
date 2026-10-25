@@ -2413,6 +2413,25 @@
       return;
     }
 
+    const config = order.cloud_vps_configuration;
+    const cloudConfigHtml = config && typeof config === 'object' ? `
+      <section class="content-card" style="margin:14px 0">
+        <div class="panel-heading"><div><h3>Configuração do Cloud VPS</h3><p>Parâmetros enviados pelo cliente na solicitação.</p></div></div>
+        <div class="order-summary">
+          <div><span>Região</span><strong>${escapeHTML(config.region_label || config.region || '—')}</strong></div>
+          <div><span>CPU</span><strong>${escapeHTML(config.cpu_cores ?? '—')} núcleo(s)</strong></div>
+          <div><span>Memória RAM</span><strong>${escapeHTML(config.ram_mb ? (config.ram_mb >= 1024 ? (config.ram_mb / 1024) + ' GB' : config.ram_mb + ' MB') : '—')}</strong></div>
+          <div><span>Armazenamento</span><strong>${escapeHTML(config.storage_gb ?? '—')} GB ${escapeHTML(config.storage_type || '')}</strong></div>
+          <div><span>Sistema operacional</span><strong>${escapeHTML(config.operating_system || '—')}</strong></div>
+          <div><span>Firewall / proteção</span><strong>${escapeHTML(config.firewall_label || config.firewall || '—')}</strong></div>
+          <div><span>Hospedagem Start</span><strong>${config.hosting_start ? 'Sim' : 'Não'}</strong></div>
+          ${Array.isArray(config.gifts) && config.gifts.length ? `<div><span>Brindes incluídos</span><strong>${escapeHTML(config.gifts.join(', '))}</strong></div>` : ''}
+        </div>
+      </section>
+    ` : `
+      <div class="notice notice-warning" style="margin:14px 0">A configuração técnica do Cloud VPS não foi encontrada nesta solicitação. Não aprove até confirmar os dados com o cliente.</div>
+    `;
+
     openModal(`Analisar solicitação #${order.id}`, `
       <div class="order-summary">
         <div><span>Cliente</span><strong>${escapeHTML(order.client_name)}</strong></div>
@@ -2420,6 +2439,7 @@
         <div><span>Valor</span><strong>${escapeHTML(money(order.amount_snapshot))} · ${escapeHTML(cycleLabel(order.billing_cycle_snapshot))}</strong></div>
         ${order.customer_notes ? `<div><span>Observação do cliente</span><strong>${escapeHTML(order.customer_notes)}</strong></div>` : ''}
       </div>
+      ${cloudConfigHtml}
       ${field('Decisão', 'decision', 'text', true, [
         { value: 'approved', label: 'Aprovar — criar serviço pendente de ativação' },
         { value: 'rejected', label: 'Rejeitar solicitação' }
