@@ -45,8 +45,7 @@ function normalizeStatus(status) {
   if (['notavailable', 'not available', 'unavailable', 'registered'].includes(s)) return 'unavailable';
   return 'unknown';
 }
-router.options('/api/domains/dna/availability', cors);
-router.get('/api/domains/dna/availability', cors, rateLimit, async (req, res) => {
+const availabilityHandler = async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const parsed = parseDomain(req.query.domain);
   if (!parsed) return fail(res, 400, 'Informe um domínio válido, como exemplo.com.br, sem subdomínios.');
@@ -78,5 +77,11 @@ router.get('/api/domains/dna/availability', cors, rateLimit, async (req, res) =>
     console.error('DomainNameAPI availability error:', err?.name || err?.code || 'error');
     return fail(res, 502, 'O serviço de consulta está temporariamente indisponível.');
   }
-});
+};
+
+// Rota de teste e rota pública já consumida pelo site: ambas usam DomainNameAPI.
+router.options('/api/domains/dna/availability', cors);
+router.options('/api/domains/availability', cors);
+router.get('/api/domains/dna/availability', cors, rateLimit, availabilityHandler);
+router.get('/api/domains/availability', cors, rateLimit, availabilityHandler);
 module.exports = router;
