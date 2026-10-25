@@ -8,6 +8,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const database = require('./database');
+const domainNameApiRoutes = require('./domainnameapi');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -3029,6 +3030,8 @@ app.use(express.static(publicPath));
 app.get('/', (req, res) => {
   res.sendFile(path.join(publicPath, 'index.html'));
 });
+
+app.use(domainNameApiRoutes);
 
 app.use('/api', (req, res) => {
   return erro(res, 404, 'Rota da API não encontrada.');
