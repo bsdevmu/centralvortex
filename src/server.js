@@ -2457,6 +2457,7 @@ app.patch(
           [order.id]
         );
         if (cloudConfigRows.length) {
+          await ensureContractedServiceDetailsTable();
           let cloudConfig = cloudConfigRows[0].configuration_json;
           if (typeof cloudConfig === 'string') cloudConfig = JSON.parse(cloudConfig);
           const details = [
