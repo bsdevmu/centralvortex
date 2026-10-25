@@ -205,10 +205,10 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
   const paymentId = String(req.query['data.id'] || req.body?.data?.id || '').trim();
   const requestId = String(req.get('x-request-id') || '').trim();
   const signatureHeader = String(req.get('x-signature') || '');
-  const ts = /(?:^|,)\\s*ts=([^,]+)/.exec(signatureHeader)?.[1]?.trim();
-  const signature = /(?:^|,)\\s*v1=([a-f0-9]+)/i.exec(signatureHeader)?.[1]?.trim();
+  const ts = /(?:^|,)\s*ts=([^,]+)/.exec(signatureHeader)?.[1]?.trim();
+  const signature = /(?:^|,)\s*v1=([a-f0-9]+)/i.exec(signatureHeader)?.[1]?.trim();
 
-  if (!/^\\d{1,30}$/.test(paymentId) || !requestId || !ts || !signature) {
+  if (!/^\d{1,30}$/.test(paymentId) || !requestId || !ts || !signature) {
     return erro(res, 400, 'Notificação inválida.');
   }
 
@@ -252,7 +252,7 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
       return res.status(200).json({ recebido: true, processado: false });
     }
 
-    const match = /^vortexgrid-invoice-(\\d+)$/.exec(String(payment.external_reference || ''));
+    const match = /^vortexgrid-invoice-(\d+)$/.exec(String(payment.external_reference || ''));
     const invoiceId = match ? validarId(match[1]) : null;
     if (!invoiceId) {
       return res.status(200).json({ recebido: true, processado: false });
@@ -321,7 +321,7 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
     // A fatura guarda os IDs dos pedidos no formato "#123 Nome".
     // Só atualiza pedidos pertencentes ao mesmo cliente.
     const orderIds = [...new Set(
-      [...String(invoice.description || '').matchAll(/#(\\d+)\\s/g)]
+      [...String(invoice.description || '').matchAll(/#(\d+)\s/g)]
         .map(match => validarId(match[1]))
         .filter(Boolean)
     )];
