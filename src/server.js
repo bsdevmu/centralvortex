@@ -215,6 +215,151 @@ app.get('/health', async (req, res) => {
 });
 
 // --------------------------------------------------
+
+/* --------------------------------------------------
+   CONSULTA PÚBLICA DE DISPONIBILIDADE DE DOMÍNIOS
+   Credenciais somente no ambiente do servidor.
+-------------------------------------------------- */
+const domainLookupBuckets = new Map();
+const domainLookupOrigins = new Set(
+  String(process.env.DOMAIN_SEARCH_ALLOWED_ORIGINS || 'https://www.vortexgrid.com.br,https://vortexgrid.com.br')
+    .split(',').map(value => value.trim()).filter(Boolean)
+);
+const domainLookupTldsCompostos = new Set([
+  'com.br', 'net.br', 'org.br', 'gov.br', 'edu.br', 'mil.br', 'art.br',
+  'blog.br', 'eco.br', 'emp.br', 'esp.br', 'etc.br', 'far.br', 'flog.br',
+  'fm.br', 'g12.br', 'imb.br', 'ind.br', 'inf.br', 'jor.br', 'lel.br',
+  'mat.br', 'med.br', 'mus.br', 'not.br', 'odo.br', 'ppg.br', 'pro.br',
+  'psc.br', 'psi.br', 'qsl.br', 'radio.br', 'rec.br', 'slg.br', 'srv.br',
+  'tmp.br', 'trd.br', 'tur.br', 'tv.br', 'vet.br', 'wiki.br', 'zlg.br',
+  'co.uk', 'org.uk', 'me.uk', 'ac.uk', 'gov.uk', 'com.au', 'net.au',
+  'org.au', 'co.nz', 'com.mx', 'com.ar', 'com.co', 'co.jp', 'co.in'
+]);
+
+function dominioParaConsulta(valor) {
+  if (typeof valor !== 'string') return null;
+  const dominio = valor.trim().toLowerCase().replace(/\\.$/, '');
+  if (dominio.length > 253 || !/^[a-z0-9.-]+$/.test(dominio) || dominio.includes('..')) return null;
+  const partes = dominio.split('.');
+  if (partes.some(parte => !parte || parte.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(parte))) return null;
+  let sufixo;
+  let nome;
+  const doisUltimos = partes.slice(-2).join('.');
+  if (domainLookupTldsCompostos.has(doisUltimos)) {
+    if (partes.length !== 3) return null;
+    nome = partes[0];
+    sufixo = doisUltimos;
+  } else {
+    if (partes.length !== 2) return null;
+    nome = partes[0];
+    sufixo = partes[1];
+  }
+  if (nome.length < 1 || sufixo.length < 2) return null;
+  return { dominio, nome, sufixo };
+}
+
+function statusDisponibilidadeDominio(payload, dominio) {
+  const candidatos = [];
+  function visitar(valor, chave = '') {
+    if (!valor || typeof valor !== 'object') return;
+    if (Array.isArray(valor)) {
+      for (const item of valor) visitar(item, chave);
+      return;
+    }
+    if (typeof valor.status === 'string') candidatos.push({ chave, status: valor.status.toLowerCase() });
+    for (const [nome, item] of Object.entries(valor)) {
+      if (item && typeof item === 'object') visitar(item, nome);
+      else if (typeof item === 'string' && /status/i.test(nome)) candidatos.push({ chave, status: item.toLowerCase() });
+    }
+  }
+  visitar(payload);
+  const encontrado = candidatos.find(item => item.chave.toLowerCase() === dominio) || candidatos[0];
+  const status = encontrado?.status || '';
+  if (['available', 'available for registration'].includes(status)) return 'available';
+  if (['regthroughus', 'registered through us', 'registered'].includes(status)) return 'registered';
+  if (['regthroughothers', 'registered through another registrar', 'unavailable', 'not available'].includes(status)) return 'unavailable';
+  return 'unknown';
+}
+
+function corsConsultaDominio(req, res, next) {
+  const origin = req.get('origin');
+  if (origin && !domainLookupOrigins.has(origin)) {
+    return erro(res, 403, 'Origem não autorizada para consulta de domínios.');
+  }
+  if (origin) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Accept, Content-Type');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+}
+
+function limitarConsultaDominio(req, res, next) {
+  const agora = Date.now();
+  const chave = req.ip || req.socket.remoteAddress || 'unknown';
+  let balde = domainLookupBuckets.get(chave);
+  if (!balde || agora - balde.inicio >= 60_000) {
+    balde = { inicio: agora, quantidade: 0 };
+    domainLookupBuckets.set(chave, balde);
+  }
+  balde.quantidade += 1;
+  if (balde.quantidade > 25) {
+    res.set('Retry-After', '60');
+    return erro(res, 429, 'Muitas consultas em pouco tempo. Aguarde um minuto e tente novamente.');
+  }
+  if (domainLookupBuckets.size > 5000) {
+    for (const [ip, item] of domainLookupBuckets) {
+      if (agora - item.inicio >= 60_000) domainLookupBuckets.delete(ip);
+    }
+  }
+  next();
+}
+
+app.options('/api/domains/availability', corsConsultaDominio);
+app.get('/api/domains/availability', corsConsultaDominio, limitarConsultaDominio, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const parsed = dominioParaConsulta(req.query.domain);
+  if (!parsed) return erro(res, 400, 'Informe um domínio válido, como exemplo.com.br, sem subdomínios.');
+
+  const resellerId = String(process.env.RESELLERCLUB_RESELLER_ID || '').trim();
+  const apiKey = String(process.env.RESELLERCLUB_API_KEY || '').trim();
+  if (!resellerId || !apiKey) {
+    return erro(res, 503, 'A consulta de domínios ainda não foi ativada. Tente novamente mais tarde.');
+  }
+
+  try {
+    const endpoint = new URL('https://domaincheck.httpapi.com/api/domains/available.json');
+    endpoint.searchParams.set('auth-userid', resellerId);
+    endpoint.searchParams.set('api-key', apiKey);
+    endpoint.searchParams.set('domain-name', parsed.nome);
+    endpoint.searchParams.set('tlds', parsed.sufixo);
+
+    const resposta = await fetch(endpoint, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!resposta.ok) {
+      console.error('ResellerClub availability HTTP error:', resposta.status);
+      return erro(res, 502, 'Não foi possível consultar o registrador agora.');
+    }
+    const payload = await resposta.json();
+    const status = statusDisponibilidadeDominio(payload, parsed.dominio);
+    const mensagens = {
+      available: 'O domínio parece estar disponível para registro. A disponibilidade será confirmada novamente no pedido.',
+      registered: 'O domínio consta como registrado pela ResellerClub.',
+      unavailable: 'O domínio não está disponível para registro neste momento.',
+      unknown: 'O registrador não confirmou a disponibilidade. Tente novamente mais tarde.'
+    };
+    return res.json({ domain: parsed.dominio, status, available: status === 'available', message: mensagens[status] });
+  } catch (error) {
+    console.error('ResellerClub availability error:', error.name || error.code || 'erro');
+    return erro(res, 502, 'O serviço de consulta está temporariamente indisponível.');
+  }
+});
+
 // CONFIGURAÇÃO INICIAL
 // --------------------------------------------------
 
