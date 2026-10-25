@@ -1686,6 +1686,25 @@
     }
   }
 
+  function cloudVpsConfigurationHtml(order) {
+    const config = order?.cloud_vps_configuration;
+    if (!config || typeof config !== 'object') return '';
+    const rows = [
+      ['Região', config.region_label],
+      ['CPU', config.cpu_cores ? `${config.cpu_cores} núcleo(s)` : '—'],
+      ['RAM', config.ram_mb >= 1024 ? `${config.ram_mb / 1024} GB` : (config.ram_mb ? `${config.ram_mb} MB` : '—')],
+      ['Armazenamento', config.storage_gb ? `${config.storage_gb} GB ${config.storage_type || ''}` : '—'],
+      ['Sistema operacional', config.operating_system],
+      ['Proteção', config.firewall_label],
+      ['Hospedagem Start', config.hosting_start ? 'Incluída' : 'Não contratada'],
+      ['Brindes', Array.isArray(config.gifts) && config.gifts.length ? config.gifts.join(', ') : 'Não elegíveis neste pedido']
+    ];
+    return `<div class="order-summary" style="margin-top:10px">
+      <strong>Configuração Cloud VPS</strong>
+      ${rows.map(([label, value]) => `<div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value ?? '—')}</strong></div>`).join('')}
+    </div>`;
+  }
+
   async function renderOrders() {
     const status = state.orderStatus;
     const query = status === 'all' ? '' : `?status=${encodeURIComponent(status)}`;
@@ -1722,6 +1741,7 @@
           `<strong>${escapeHTML(order.client_name)}</strong>
            <br><small>${escapeHTML(order.client_email || '—')}</small>`,
           `${escapeHTML(order.service_name || order.description_snapshot)}
+           ${cloudVpsConfigurationHtml(order)}
            ${order.customer_notes
              ? `<br><small>Cliente: ${escapeHTML(order.customer_notes)}</small>`
              : ''}`,
@@ -1758,6 +1778,7 @@
         <div><span>Valor</span><strong>${escapeHTML(money(order.amount_snapshot))} · ${escapeHTML(cycleLabel(order.billing_cycle_snapshot))}</strong></div>
         ${order.customer_notes ? `<div><span>Observação do cliente</span><strong>${escapeHTML(order.customer_notes)}</strong></div>` : ''}
       </div>
+      ${cloudVpsConfigurationHtml(order)}
       ${field('Decisão', 'decision', 'text', true, [
         { value: 'approved', label: 'Aprovar — criar serviço pendente de ativação' },
         { value: 'rejected', label: 'Rejeitar solicitação' }
