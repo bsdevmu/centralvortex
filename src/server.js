@@ -2902,13 +2902,15 @@ app.get('/api/service-orders', autenticado, somenteAdmin, async (req, res) => {
          i.status AS invoice_status,
          cs.operational_status,
          c.name AS client_name, c.email AS client_email,
-         s.name AS service_name, u.name AS reviewed_by_name
+         s.name AS service_name, u.name AS reviewed_by_name,
+         cvc.configuration_json AS cloud_vps_configuration_json
        FROM service_orders so
        INNER JOIN clients c ON c.id = so.client_id
        INNER JOIN services s ON s.id = so.service_id
        LEFT JOIN invoices i ON i.id = so.invoice_id
        LEFT JOIN contracted_services cs ON cs.id = so.contracted_service_id
        LEFT JOIN users u ON u.id = so.reviewed_by
+       LEFT JOIN cloud_vps_order_configurations cvc ON cvc.service_order_id = so.id
        ${where}
        ORDER BY
          CASE WHEN so.approval_status = 'pending' THEN 0 ELSE 1 END,
@@ -2919,6 +2921,15 @@ app.get('/api/service-orders', autenticado, somenteAdmin, async (req, res) => {
 
     return res.json(rows.map(order => ({
       ...order,
+      cloud_vps_configuration: (() => {
+        try {
+          return typeof order.cloud_vps_configuration_json === 'string'
+            ? JSON.parse(order.cloud_vps_configuration_json)
+            : (order.cloud_vps_configuration_json || null);
+        } catch {
+          return null;
+        }
+      })(),
       amount_snapshot: Number(order.amount_snapshot || 0)
     })));
   } catch (e) {
