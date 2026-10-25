@@ -919,13 +919,17 @@
     openModal(
       `Informações do serviço — ${serviceName || 'Serviço'}`,
       `
-        <p class="summary-footer" style="margin-bottom:14px">
-          Cadastre os dados específicos desta contratação que o cliente poderá consultar.
-          Use uma linha por informação no formato <strong>Título | Valor</strong>.
-          Exemplo: IP do servidor | 192.0.2.10
+        <p class="summary-footer" style="margin-bottom:10px">
+          Cadastre aqui os dados técnicos desta contratação. Cada linha deve seguir o formato <strong>Título | Valor</strong>.
+          O conteúdo será exibido no card externo de detalhes do serviço na Área do Cliente.
         </p>
+        <div class="summary-footer" style="margin-bottom:12px;line-height:1.7">
+          <strong>Modelos para preencher (copie somente os campos que já tiver confirmado):</strong><br>
+          <strong>Hospedagem cPanel:</strong> Domínio principal | valor; Endereço do cPanel | https://...; Hostname | valor; Nameservers | valor; Usuário cPanel | valor.<br>
+          <strong>Cloud VPS:</strong> Endereço IP | valor; Sistema operacional | valor; vCPU | valor; Memória RAM | valor; Armazenamento | valor; Instruções de conexão | valor.
+        </div>
         ${field('Informações visíveis ao cliente', 'details_text', 'textarea', false, null, lines)}
-        <p class="summary-footer">Até 30 linhas. Não inclua fornecedor, custo interno ou observações administrativas.</p>
+        <p class="summary-footer">Até 30 linhas. Não inclua senhas, chaves privadas, tokens, fornecedor, custo interno ou observações administrativas. Para links, use endereços completos com https://.</p>
       `,
       async values => {
         const parsed = String(values.details_text || '')
