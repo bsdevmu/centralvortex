@@ -3,6 +3,7 @@
 require('dotenv').config();
 
 const express = require('express');
+const crypto = require('crypto');
 const helmet = require('helmet');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
@@ -189,6 +190,160 @@ function normalizarBooleano(valor, padrao = false) {
     valor === '1' ||
     valor === 'true';
 }
+
+// --------------------------------------------------
+// WEBHOOK MERCADO PAGO — CONFIRMAÇÃO SERVER-TO-SERVER
+// --------------------------------------------------
+app.post('/api/webhooks/mercadopago', async (req, res) => {
+  const secret = process.env.MP_WEBHOOK_SECRET;
+  const accessToken = process.env.MP_ACCESS_TOKEN;
+
+  if (!secret || !accessToken) {
+    return erro(res, 503, 'Webhook de pagamento não configurado.');
+  }
+
+  const paymentId = String(req.query['data.id'] || req.body?.data?.id || '').trim();
+  const requestId = String(req.get('x-request-id') || '').trim();
+  const signatureHeader = String(req.get('x-signature') || '');
+  const ts = /(?:^|,)\\s*ts=([^,]+)/.exec(signatureHeader)?.[1]?.trim();
+  const signature = /(?:^|,)\\s*v1=([a-f0-9]+)/i.exec(signatureHeader)?.[1]?.trim();
+
+  if (!/^\\d{1,30}$/.test(paymentId) || !requestId || !ts || !signature) {
+    return erro(res, 400, 'Notificação inválida.');
+  }
+
+  const manifest = `id:${paymentId};request-id:${requestId};ts:${ts};`;
+  const expected = crypto.createHmac('sha256', secret).update(manifest).digest();
+  let received;
+  try {
+    received = Buffer.from(signature, 'hex');
+  } catch (_) {
+    return erro(res, 401, 'Assinatura inválida.');
+  }
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) {
+    return erro(res, 401, 'Assinatura inválida.');
+  }
+
+  let conn;
+  try {
+    const gatewayResponse = await fetch(
+      `https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json'
+        },
+        signal: AbortSignal.timeout(15000)
+      }
+    );
+
+    if (!gatewayResponse.ok) {
+      console.error('Mercado Pago: consulta de pagamento falhou:', gatewayResponse.status);
+      return res.status(502).json({ erro: 'Não foi possível confirmar o pagamento.' });
+    }
+
+    const payment = await gatewayResponse.json();
+    if (
+      String(payment.id) !== paymentId ||
+      payment.status !== 'approved' ||
+      payment.currency_id !== 'BRL' ||
+      !valorMonetario(payment.transaction_amount)
+    ) {
+      return res.status(200).json({ recebido: true, processado: false });
+    }
+
+    const match = /^vortexgrid-invoice-(\\d+)$/.exec(String(payment.external_reference || ''));
+    const invoiceId = match ? validarId(match[1]) : null;
+    if (!invoiceId) {
+      return res.status(200).json({ recebido: true, processado: false });
+    }
+
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const [invoiceRows] = await conn.query(
+      'SELECT id, client_id, description, amount, status FROM invoices WHERE id = ? FOR UPDATE',
+      [invoiceId]
+    );
+    const invoice = invoiceRows[0];
+    if (!invoice) {
+      await conn.rollback();
+      return res.status(200).json({ recebido: true, processado: false });
+    }
+
+    const [preferenceRows] = await conn.query(
+      `SELECT id, amount, external_reference, payment_id
+       FROM mercadopago_checkout_preferences
+       WHERE invoice_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [invoiceId]
+    );
+    const preference = preferenceRows[0];
+    const centavos = value => Math.round(Number(value) * 100);
+    if (
+      !preference ||
+      preference.external_reference !== payment.external_reference ||
+      centavos(preference.amount) !== centavos(invoice.amount) ||
+      centavos(payment.transaction_amount) !== centavos(invoice.amount)
+    ) {
+      await conn.rollback();
+      console.error('Mercado Pago: referência ou valor não confere para a fatura', invoiceId);
+      return res.status(200).json({ recebido: true, processado: false });
+    }
+
+    if (invoice.status === 'paid') {
+      await conn.commit();
+      return res.status(200).json({ recebido: true, processado: false, motivo: 'fatura_ja_paga' });
+    }
+    if (!['pending', 'overdue'].includes(invoice.status)) {
+      await conn.rollback();
+      return res.status(200).json({ recebido: true, processado: false });
+    }
+
+    await conn.query(
+      `INSERT INTO payments (invoice_id, amount, method, reference)
+       VALUES (?, ?, 'mercadopago', ?)`,
+      [invoice.id, invoice.amount, paymentId]
+    );
+    await conn.query(
+      "UPDATE invoices SET status = 'paid' WHERE id = ?",
+      [invoice.id]
+    );
+    await conn.query(
+      `UPDATE mercadopago_checkout_preferences
+       SET payment_id = ?, status = 'approved'
+       WHERE id = ?`,
+      [paymentId, preference.id]
+    );
+
+    // A fatura guarda os IDs dos pedidos no formato "#123 Nome".
+    // Só atualiza pedidos pertencentes ao mesmo cliente.
+    const orderIds = [...new Set(
+      [...String(invoice.description || '').matchAll(/#(\\d+)\\s/g)]
+        .map(match => validarId(match[1]))
+        .filter(Boolean)
+    )];
+    for (const orderId of orderIds) {
+      await conn.query(
+        `UPDATE service_orders
+         SET payment_status = 'paid'
+         WHERE id = ? AND client_id = ? AND payment_status = 'pending'`,
+        [orderId, invoice.client_id]
+      );
+    }
+
+    await conn.commit();
+    return res.status(200).json({ recebido: true, processado: true });
+  } catch (error) {
+    if (conn) await conn.rollback().catch(() => {});
+    console.error('Erro no webhook Mercado Pago:', error.code || error.message || 'erro');
+    return res.status(500).json({ erro: 'Falha ao processar a notificação.' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
 
 // --------------------------------------------------
 // SAÚDE
