@@ -1,4 +1,3 @@
-
 {
   "name": "vortexgrid-platform",
   "version": "1.0.0",
@@ -6,7 +5,8 @@
   "description": "Plataforma SaaS VortexGrid",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check public/app.js"
   },
   "engines": {
     "node": ">=20"

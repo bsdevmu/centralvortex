@@ -2279,11 +2279,13 @@ app.get('/api/service-orders', autenticado, somenteAdmin, async (req, res) => {
          so.payment_status, so.customer_notes, so.admin_notes,
          so.reviewed_by, so.reviewed_at, so.created_at, so.updated_at,
          c.name AS client_name, c.email AS client_email,
-         s.name AS service_name, u.name AS reviewed_by_name
+         s.name AS service_name, u.name AS reviewed_by_name,
+         cvc.configuration_json AS cloud_vps_configuration_json
        FROM service_orders so
        INNER JOIN clients c ON c.id = so.client_id
        INNER JOIN services s ON s.id = so.service_id
        LEFT JOIN users u ON u.id = so.reviewed_by
+       LEFT JOIN cloud_vps_order_configurations cvc ON cvc.service_order_id = so.id
        ${where}
        ORDER BY
          CASE WHEN so.approval_status = 'pending' THEN 0 ELSE 1 END,
@@ -2292,10 +2294,24 @@ app.get('/api/service-orders', autenticado, somenteAdmin, async (req, res) => {
       params
     );
 
-    return res.json(rows.map(order => ({
-      ...order,
-      amount_snapshot: Number(order.amount_snapshot || 0)
-    })));
+    return res.json(rows.map(order => {
+      let cloudVpsConfiguration = null;
+      if (order.cloud_vps_configuration_json) {
+        try {
+          cloudVpsConfiguration = typeof order.cloud_vps_configuration_json === 'string'
+            ? JSON.parse(order.cloud_vps_configuration_json)
+            : order.cloud_vps_configuration_json;
+        } catch {
+          cloudVpsConfiguration = null;
+        }
+      }
+      const { cloud_vps_configuration_json, ...rest } = order;
+      return {
+        ...rest,
+        amount_snapshot: Number(order.amount_snapshot || 0),
+        cloud_vps_configuration: cloudVpsConfiguration
+      };
+    }));
   } catch (e) {
     console.error(
       'Erro listar solicitações:',
@@ -2417,7 +2433,7 @@ app.patch(
 
         const service = services[0];
 
-        await conn.query(
+        const [contratadoResult] = await conn.query(
           `INSERT INTO contracted_services (
              client_id, service_id, name, description, status,
              billing_cycle, sale_price, supplier_cost, notes
@@ -2432,6 +2448,39 @@ app.patch(
             `Criado pela aprovação da solicitação #${order.id}.`
           ]
         );
+
+        const [cloudConfigRows] = await conn.query(
+          `SELECT configuration_json
+           FROM cloud_vps_order_configurations
+           WHERE service_order_id = ?
+           LIMIT 1`,
+          [order.id]
+        );
+        if (cloudConfigRows.length) {
+          await ensureContractedServiceDetailsTable();
+          let cloudConfig = cloudConfigRows[0].configuration_json;
+          if (typeof cloudConfig === 'string') cloudConfig = JSON.parse(cloudConfig);
+          const details = [
+            ['Produto', 'Cloud Pro V2'],
+            ['Região', cloudConfig.region_label],
+            ['CPU', `${cloudConfig.cpu_cores} núcleo(s)`],
+            ['Memória RAM', cloudConfig.ram_mb >= 1024 ? `${cloudConfig.ram_mb / 1024} GB` : `${cloudConfig.ram_mb} MB`],
+            ['Armazenamento', `${cloudConfig.storage_gb} GB ${cloudConfig.storage_type}`],
+            ['Sistema operacional', cloudConfig.operating_system],
+            ['Proteção de rede', cloudConfig.firewall_label],
+            ['Hospedagem Start', cloudConfig.hosting_start ? 'Incluída' : 'Não contratada'],
+            ['Brindes', Array.isArray(cloudConfig.gifts) && cloudConfig.gifts.length ? cloudConfig.gifts.join(', ') : 'Não elegíveis neste pedido']
+          ];
+          for (let index = 0; index < details.length; index++) {
+            const [label, value] = details[index];
+            await conn.query(
+              `INSERT INTO contracted_service_details
+                 (contracted_service_id, label, value, sort_order)
+               VALUES (?, ?, ?, ?)`,
+              [contratadoResult.insertId, label, String(value ?? '—'), index]
+            );
+          }
+        }
       }
 
       await conn.query(
