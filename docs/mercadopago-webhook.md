@@ -27,8 +27,8 @@ O retorno de sucesso no navegador não é usado como prova de pagamento.
 
 ## Antes de publicar
 
-- Confirmar que Portal e Central usam o mesmo banco e que a tabela `mercadopago_checkout_preferences` é criada pelo checkout.
+- A tabela `mercadopago_checkout_preferences`, incluindo `payment_id`, é criada pelo checkout do Portal; confirmar que ela existe no banco compartilhado usado pela Central.
 - Configurar as duas variáveis de ambiente na Central.
 - Testar em ambiente de homologação com pagamento aprovado, pendente, recusado, assinatura inválida e notificação repetida.
-- Conferir a estrutura real da tabela `payments` e os estados permitidos de `service_orders.payment_status`.
+- Conferir os estados permitidos de `service_orders.payment_status` no banco real.
 - Não mesclar nem publicar sem revisão e autorização.
