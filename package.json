@@ -18,6 +18,7 @@
     "mariadb": "^3.4.5",
     "express-session": "^1.18.2",
     "bcryptjs": "^3.0.2",
+    "multer": "^2.0.2",
     "nodejs-dna": "^3.0.0"
   }
 }
