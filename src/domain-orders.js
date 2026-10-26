@@ -55,7 +55,7 @@ function criarRotasDominios({ db, autenticado, somenteAdmin }) {
       await prepararTabela();
       const body = req.body || {};
       const clientId = Number(body.client_id);
-      const domain = String(body.domain_name || '').trim().toLowerCase().replace(/^https?:\\/\\//, '').replace(/\\/$/, '');
+      const domain = String(body.domain_name || '').trim().toLowerCase();
       const salePrice = Number(body.sale_price);
       const providerCost = Number(body.provider_cost || 0);
       if (!Number.isSafeInteger(clientId) || clientId < 1) return res.status(400).json({ erro: 'Selecione um cliente válido.' });
