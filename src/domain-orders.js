@@ -59,7 +59,7 @@ function criarRotasDominios({ db, autenticado, somenteAdmin }) {
       const salePrice = Number(body.sale_price);
       const providerCost = Number(body.provider_cost || 0);
       if (!Number.isSafeInteger(clientId) || clientId < 1) return res.status(400).json({ erro: 'Selecione um cliente válido.' });
-      if (!/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(domain)) return res.status(400).json({ erro: 'Informe um domínio válido, como exemplo.com.br.' });
+      if (!/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) return res.status(400).json({ erro: 'Informe um domínio válido, como exemplo.com.br.' });
       if (!Number.isFinite(salePrice) || salePrice < 0 || !Number.isFinite(providerCost) || providerCost < 0) return res.status(400).json({ erro: 'Informe valores válidos para venda e custo.' });
       const [clients] = await db.query('SELECT id FROM clients WHERE id = ? LIMIT 1', [clientId]);
       if (!clients.length) return res.status(404).json({ erro: 'Cliente não encontrado.' });
