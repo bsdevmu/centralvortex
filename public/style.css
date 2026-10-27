@@ -5698,3 +5698,30 @@ body.premium-hybrid-metallic { background:#DFE3E7; }
   #app-view .sidebar-backdrop:not([hidden]) { pointer-events: auto; }
   #app-view .mobile-menu-toggle { touch-action: manipulation; }
 }
+
+
+/* Correção de interação: recolher/expandir menu com mouse e toque */
+#app-view #sidebar-collapse-toggle {
+  position: relative;
+  z-index: 5;
+  pointer-events: auto !important;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+@media (min-width: 761px) {
+  body.sidebar-collapsed #app-view .sidebar {
+    width: 84px !important;
+  }
+  body.sidebar-collapsed #app-view .main-area {
+    margin-left: 84px !important;
+  }
+}
+@media (max-width: 760px) {
+  #app-view #sidebar-collapse-toggle {
+    display: none !important;
+  }
+  #app-view .mobile-menu-toggle {
+    pointer-events: auto !important;
+    touch-action: manipulation;
+  }
+}
