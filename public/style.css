@@ -5584,3 +5584,53 @@ body.premium-hybrid-metallic { background:#DFE3E7; }
 
 .btn-whatsapp { background:#16834a !important; border-color:#16834a !important; color:#fff !important; text-decoration:none !important; }
 .btn-whatsapp:hover { background:#116c3c !important; }
+
+
+/* Orçamentos: impedir que a coluna Proposta alargue toda a tabela */
+#app-view .quotes-table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+#app-view table.quotes-table {
+  width: 100%;
+  min-width: 1050px;
+  table-layout: fixed;
+}
+#app-view table.quotes-table th,
+#app-view table.quotes-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+#app-view table.quotes-table th:nth-child(1),
+#app-view table.quotes-table td:nth-child(1) { width: 54px; }
+#app-view table.quotes-table th:nth-child(2),
+#app-view table.quotes-table td:nth-child(2) { width: 190px; }
+#app-view table.quotes-table th:nth-child(3),
+#app-view table.quotes-table td:nth-child(3) { width: 145px; }
+#app-view table.quotes-table th:nth-child(4),
+#app-view table.quotes-table td:nth-child(4) { width: 165px; }
+#app-view table.quotes-table th:nth-child(5),
+#app-view table.quotes-table td:nth-child(5) { width: 170px; }
+#app-view table.quotes-table th:nth-child(6),
+#app-view table.quotes-table td:nth-child(6) { width: 105px; }
+#app-view table.quotes-table th:nth-child(7),
+#app-view table.quotes-table td:nth-child(7) { width: 165px; }
+#app-view table.quotes-table th:nth-child(8),
+#app-view table.quotes-table td:nth-child(8) { width: 135px; }
+#app-view table.quotes-table td:nth-child(5) {
+  font-size: 12px;
+  line-height: 1.45;
+}
+#app-view table.quotes-table td:nth-child(5) small {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #747b83;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+@media (max-width: 760px) {
+  #app-view .quotes-table-wrapper { max-width: calc(100vw - 28px); }
+}
