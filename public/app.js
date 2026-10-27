@@ -354,6 +354,7 @@
       'activations',
       'categories',
       'orders',
+      'quotes',
       'finance',
       'users'
     ];
@@ -397,6 +398,7 @@
       activations: 'Ativações e serviços contratados',
       categories: 'Categorias de serviços',
       orders: 'Solicitações',
+      quotes: 'Orçamentos',
       finance: 'Financeiro',
       users: 'Usuários'
     };
@@ -431,6 +433,9 @@
           break;
         case 'orders':
           await renderOrders();
+          break;
+        case 'quotes':
+          await renderQuotes();
           break;
         case 'finance':
           await renderFinance();
@@ -2177,23 +2182,30 @@
 
   async function refreshOrdersBadge() {
     const badge = $('#orders-badge');
-
-    if (!badge || state.user?.role !== 'admin') return;
+    const quotesBadge = $('#quotes-badge');
+    if (state.user?.role !== 'admin') return;
 
     try {
-      const [result, quoteResult] = await Promise.all([
-        api('/api/service-orders?status=pending'),
-        api('/api/quote-requests')
-      ]);
+      const result = await api('/api/service-orders?status=pending');
       const pendingOrders = getArray(result, 'orders').length;
+      if (badge) {
+        badge.textContent = pendingOrders > 99 ? '99+' : String(pendingOrders);
+        badge.hidden = pendingOrders === 0;
+      }
+    } catch {
+      if (badge) badge.hidden = true;
+    }
+
+    try {
+      const quoteResult = await api('/api/quote-requests');
       const pendingQuotes = getArray(quoteResult, 'quote_requests')
         .filter(item => item.status === 'requested').length;
-      const total = pendingOrders + pendingQuotes;
-
-      badge.textContent = total > 99 ? '99+' : String(total);
-      badge.hidden = total === 0;
+      if (quotesBadge) {
+        quotesBadge.textContent = pendingQuotes > 99 ? '99+' : String(pendingQuotes);
+        quotesBadge.hidden = pendingQuotes === 0;
+      }
     } catch {
-      badge.hidden = true;
+      if (quotesBadge) quotesBadge.hidden = true;
     }
   }
 
@@ -2271,16 +2283,12 @@
   async function renderOrders() {
     const status = state.orderStatus;
     const query = status === 'all' ? '' : `?status=${encodeURIComponent(status)}`;
-    const [result, quoteResult] = await Promise.all([
-      api(`/api/service-orders${query}`),
-      api('/api/quote-requests')
-    ]);
+    const result = await api(`/api/service-orders${query}`);
     const orders = getArray(result, 'orders');
-    const quotes = getArray(quoteResult, 'quote_requests');
     state.cache.orders = orders;
     const tabs = [['pending', 'Pendentes'], ['approved', 'Aprovadas'], ['rejected', 'Rejeitadas'], ['all', 'Todas']];
     content.innerHTML = `
-      ${pageHeader('Solicitações', 'Pedidos de contratação e orçamentos personalizados enviados pelos clientes.')}
+      ${pageHeader('Solicitações', 'Pedidos de contratação enviados pelos clientes.')}
       <section class="content-card" style="margin-bottom:18px">
         <div class="filter-tabs" role="tablist">
           ${tabs.map(([value, label]) => `<button type="button" role="tab" class="filter-tab ${status === value ? 'active' : ''}" data-action="orders-filter" data-status="${value}">${label}</button>`).join('')}
@@ -2300,7 +2308,17 @@
           statusLabel(order.approval_status),
           `<div class="quick-actions">${order.approval_status === 'pending' ? `<button type="button" class="btn btn-small btn-primary" data-action="review-order" data-id="${escapeHTML(order.id)}">Analisar</button>` : `<small>${escapeHTML(order.reviewed_by_name || 'Automático')}<br>${dateTime(order.reviewed_at)} ${order.admin_notes ? `<br>“${escapeHTML(order.admin_notes)}”` : ''}</small>`}${order.contracted_service_id && order.payment_status === 'paid' ? `<button type="button" class="btn btn-small" data-action="change-operational-status" data-id="${escapeHTML(order.contracted_service_id)}" data-status="${escapeHTML(order.operational_status || 'awaiting_payment')}" data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Atualizar etapa</button><button type="button" class="btn btn-small" data-action="view-operational-history" data-id="${escapeHTML(order.contracted_service_id)}" data-name="${escapeHTML(order.service_name || order.description_snapshot)}">Histórico</button>` : ''}</div>`
         ]))}
-      <section class="content-card" style="margin-top:24px">
+
+    `;
+  }
+
+
+  async function renderQuotes() {
+    const result = await api('/api/quote-requests');
+    const quotes = getArray(result, 'quote_requests');
+    content.innerHTML = `
+      ${pageHeader('Orçamentos', 'Gerencie solicitações, propostas e o andamento da contratação.')}
+      <section class="content-card" style="margin-top:0">
         <div class="panel-heading"><div><h2>Orçamentos personalizados</h2><p>Acompanhe a solicitação, a resposta do cliente e as etapas de contratação. Avançar etapas não cria faturas nem ativa serviços.</p></div></div>
         <p class="summary-footer">${quotes.length} orçamento(s) registrado(s).</p>
         ${table(['Nº', 'Cliente', 'Produto', 'Necessidade informada', 'Proposta', 'Validade', 'Status / etapa', 'Ação'],
