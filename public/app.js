@@ -222,14 +222,14 @@
     }
   }
 
-  function table(headers, rows) {
+  function table(headers, rows, tableClass = '') {
     if (!rows.length) {
       return `<div class="empty-state">Nenhum registro encontrado.</div>`;
     }
 
     return `
-      <div class="table-wrapper">
-        <table>
+      <div class="table-wrapper ${escapeHTML(tableClass)}-wrapper">
+        <table class="${escapeHTML(tableClass)}">
           <thead>
             <tr>${headers.map(header =>
               `<th>${escapeHTML(header)}</th>`
@@ -2346,7 +2346,7 @@
               `<strong>${escapeHTML(statusText)}</strong>${stageText ? `<br><small>Etapa: ${escapeHTML(stageText)}</small>` : ''}`,
               action
             ];
-          }))}
+          }), 'quotes-table')}
       </section>
     `;
   }
