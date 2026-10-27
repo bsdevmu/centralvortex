@@ -5581,3 +5581,6 @@ body.premium-hybrid-metallic { background:#DFE3E7; }
     transform: none;
   }
 }
+
+.btn-whatsapp { background:#16834a !important; border-color:#16834a !important; color:#fff !important; text-decoration:none !important; }
+.btn-whatsapp:hover { background:#116c3c !important; }
