@@ -3456,11 +3456,17 @@
     mobileMenuButton?.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
     if (mobileSidebarBackdrop) mobileSidebarBackdrop.hidden = !open;
   }
-  mobileMenuButton?.addEventListener('click', event => {
+  // O clique é delegado no document para continuar funcionando mesmo
+  // quando o layout responsivo reorganiza elementos do cabeçalho.
+  document.addEventListener('click', event => {
+    const button = event.target instanceof Element
+      ? event.target.closest('#mobile-menu-toggle')
+      : null;
+    if (!button) return;
     event.preventDefault();
     event.stopPropagation();
     setMobileSidebarOpen(!document.body.classList.contains('sidebar-open'));
-  });
+  }, true);
   mobileSidebarBackdrop?.addEventListener('click', () => setMobileSidebarOpen(false));
   document.querySelectorAll('#sidebar [data-page]').forEach(item => {
     item.addEventListener('click', () => setMobileSidebarOpen(false));
@@ -3518,8 +3524,29 @@
   document.addEventListener('click',e=>{const t=e.target;if(!(t instanceof Element))return;if(globalSearchWrap&&!globalSearchWrap.contains(t))closeGlobalSearch();if(shortcutsMenu&&!shortcutsMenu.contains(t)&&!shortcutsButton?.contains(t))closeShortcuts();});
   shortcutsButton?.addEventListener('click',()=>{const open=shortcutsMenu?.hidden??true;closeGlobalSearch();if(shortcutsMenu)shortcutsMenu.hidden=!open;shortcutsButton.setAttribute('aria-expanded',String(open));});
   alertsButton?.addEventListener('click',async()=>{closeGlobalSearch();closeShortcuts();if(state.user?.role!=='admin'){navigate('finance');return;}await navigate('dashboard');requestAnimationFrame(()=>{const p=$('#alert-center-title')?.closest('.alert-center');if(p){p.scrollIntoView({behavior:'smooth',block:'center'});p.classList.add('alert-center-highlight');setTimeout(()=>p.classList.remove('alert-center-highlight'),1800);}});});
-  collapseButton?.addEventListener('click',()=>{const on=document.body.classList.toggle('sidebar-collapsed');collapseButton.setAttribute('aria-pressed',String(on));collapseButton.setAttribute('aria-label',on?'Expandir menu':'Recolher menu');collapseButton.title=on?'Expandir menu':'Recolher menu';const l=collapseButton.querySelector('.collapse-toggle-label');if(l)l.textContent=on?'Expandir menu':'Recolher menu';const i=collapseButton.querySelector('span[aria-hidden="true"]');if(i)i.textContent=on?'›':'‹';try{localStorage.setItem('vortexgrid-sidebar-collapsed',on?'1':'0');}catch{}});
-  try{if(localStorage.getItem('vortexgrid-sidebar-collapsed')==='1'){document.body.classList.add('sidebar-collapsed');collapseButton?.setAttribute('aria-pressed','true');collapseButton?.setAttribute('aria-label','Expandir menu');if(collapseButton)collapseButton.title='Expandir menu';const l=collapseButton?.querySelector('.collapse-toggle-label');if(l)l.textContent='Expandir menu';const i=collapseButton?.querySelector('span[aria-hidden="true"]');if(i)i.textContent='›';}}catch{}
+  function setSidebarCollapsed(collapsed) {
+    const on = Boolean(collapsed);
+    document.body.classList.toggle('sidebar-collapsed', on);
+    if (!collapseButton) return;
+    collapseButton.setAttribute('aria-pressed', String(on));
+    collapseButton.setAttribute('aria-label', on ? 'Expandir menu' : 'Recolher menu');
+    collapseButton.title = on ? 'Expandir menu' : 'Recolher menu';
+    const label = collapseButton.querySelector('.collapse-toggle-label');
+    if (label) label.textContent = on ? 'Expandir menu' : 'Recolher menu';
+    const icon = collapseButton.querySelector('span[aria-hidden="true"]');
+    if (icon) icon.textContent = on ? '›' : '‹';
+    try { localStorage.setItem('vortexgrid-sidebar-collapsed', on ? '1' : '0'); } catch {}
+  }
+  document.addEventListener('click', event => {
+    const button = event.target instanceof Element
+      ? event.target.closest('#sidebar-collapse-toggle')
+      : null;
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+  }, true);
+  try { setSidebarCollapsed(localStorage.getItem('vortexgrid-sidebar-collapsed') === '1'); } catch { setSidebarCollapsed(false); }
   document.addEventListener('keydown',e=>{const k=e.key.toLowerCase();if((e.ctrlKey||e.metaKey)&&k==='k'){e.preventDefault();globalSearchInput?.focus();globalSearchInput?.select();}else if(k==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();globalSearchInput?.focus();}else if(e.key==='Escape'){closeGlobalSearch();closeShortcuts();}});
 
   init();
